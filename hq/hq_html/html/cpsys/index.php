@@ -1,8 +1,10 @@
 <?php
 /**
  * Toptea HQ - cpsys main entry
- * Revision: 2.4.1  |  2025-11-10
+ * Revision: 2.4.2  |  2025-11-10 (Fixes by Engineer)
  * - (Eng) Changed rms_product_management list sort order to product_code ASC.
+ * - (Eng) Fixed missing 'name_zh' key in getAllBaseProducts fallback.
+ * - (Eng) Fixed missing 'break' statement in switch(page) before 'product_status_management'.
  * - Robust view fallback (no dependency on error_view.php)
  * - Adds minimal handlers/data for: expiry_management, pos_eod_reports, pos_shift_review
  * - Safe fallbacks for commonly-missing helper functions
@@ -577,17 +579,17 @@ switch ($page) {
         $sweetness_options = getAllSweetnessOptions($pdo);
         $content_view = APP_PATH . '/views/cpsys/sweetness_option_management_view.php';
         $page_js      = 'sweetness_option_management.js';
+        // ================== [GEMINI SYNTAX FIX START] ==================
+        // 修复了 `case 'product_status_management'` 之前缺少的 `break;`
         break;
+        // ================== [GEMINI SYNTAX FIX END] ==================
 
-    // ================== [GEMINI SYNTAX FIX START] ==================
-    // 修复了 `case 'product_status_management'` 之前缺少的 `break;`
     case 'product_status_management':
         $page_title   = '字典管理 - 产品状态';
         $statuses     = getAllStatuses($pdo);
         $content_view = APP_PATH . '/views/cpsys/product_status_management_view.php';
         $page_js      = 'product_status_management.js';
         break;
-    // ================== [GEMINI SYNTAX FIX END] ==================
 
     case 'user_management':
         $page_title   = '系统设置 - 用户管理';

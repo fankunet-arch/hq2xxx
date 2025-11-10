@@ -2,9 +2,10 @@
 /**
  * Toptea HQ - CPSYS API 注册表 (BMS - POS Management)
  * 注册 POS 菜单、商品、会员、促销等资源
- * Version: 1.3.001 (Syntax Fix & Material Usage Report)
- * Date: 2025-11-09
+ * Version: 1.3.002 (Shift Review Bug Fix)
+ * Date: 2025-11-10
  *
+ * [GEMINI V1.3.002]: CRITICAL FIX - Removed `notes` field from pos_eod_records update in handle_shift_review, as the column does not exist in the schema.
  * [GEMINI V1.3.001]: CRITICAL FIX - Replaced trailing '}' with ';' to fix PHP Parse Error (500).
  * [GEMINI V1.3.000]: Added handle_menu_get_material_usage_report and registered 'get_material_usage_report' action.
  * [GEMINI V1.2.005]: Added `mi.product_code` to the SELECT list in `handle_menu_get_with_materials` per user request.
@@ -745,7 +746,7 @@ function handle_shift_review(PDO $pdo, array $config, array $input_data): void {
         $stmt_update = $pdo->prepare("UPDATE pos_shifts SET counted_cash = ?, cash_variance = ?, admin_reviewed = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
         $stmt_update->execute([$counted_cash, $cash_diff, $shift_id]);
         
-        // ================== [GEMINI HEALTH CHECK FIX START] ==================
+        // ================== [GEMINI HEALTH CHECK FIX V2.0] ==================
         // 移除了对 `pos_eod_records.notes` 字段的写入，因为该字段不存在。
         try {
             $stmt_eod = $pdo->prepare("UPDATE pos_eod_records SET counted_cash = ?, cash_diff = ? WHERE shift_id = ?");
@@ -754,7 +755,7 @@ function handle_shift_review(PDO $pdo, array $config, array $input_data): void {
             if ($e->getCode() !== '42S02') { throw $e; }
             error_log("Warning: pos_eod_records table not found during shift review. Skipping update.");
         }
-        // ================== [GEMINI HEALTH CHECK FIX END] ==================
+        // ================== [GEMINI HEALTH CHECK FIX V2.0] ==================
 
         $pdo->commit();
         json_ok(null, '班次复核成功！');
