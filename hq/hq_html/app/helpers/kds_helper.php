@@ -23,4 +23,3 @@ require_once __DIR__ . '/kds/kds_sop_engine.php';
 
 // === 新增：把缺失的小型通用函数集中补齐（最小侵入修复） ===
 require_once __DIR__ . '/kds/kds_repo_fix.php';
-?>

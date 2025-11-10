@@ -68,4 +68,3 @@ try {
     header('Location: ../login.php?error=3');
     exit;
 }
-}
