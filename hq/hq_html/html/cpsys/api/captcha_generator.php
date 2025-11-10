@@ -3,6 +3,10 @@
  * Toptea HQ - cpsys
  * Simple CAPTCHA Image Generator
  * Engineer: Gemini | Date: 2025-10-24
+ *
+ * [GEMINI SECURITY FIX V1.2 - 2025-11-10]
+ * - Repaired file encoding by removing non-breaking space characters (U+00A0)
+ * that were causing a fatal Parse Error.
  */
 
 @session_start();

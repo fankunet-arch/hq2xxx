@@ -4,6 +4,10 @@
  * 注册核心系统资源 (用户, 门店, 字典, 打印模板等)
  *
  * Revision: 1.2.070 (Invoice Prefix & Multi-Printer Refactor)
+ *
+ * [GEMINI SECURITY FIX V1.0 - 2025-11-10]
+ * - Fixed handle_profile_save() to use password_verify() and password_hash(..., PASSWORD_BCRYPT)
+ * - This resolves the critical hash mismatch with login_handler and user_management.
  */
 
 // 确保助手已加载 (网关会处理，但作为保险)
@@ -606,11 +610,13 @@ function handle_profile_save(PDO $pdo, array $config, array $input_data): void {
     $user = getUserById($pdo, $user_id);
     if ($user['email'] !== $email || !empty($new_password)) {
         if (empty($current_password)) json_error('修改邮箱或密码时，必须提供当前密码。', 403);
-        $current_hash_check = hash('sha256', $current_password);
+        
+        // [GEMINI SECURITY FIX V1.0] Verify against the DB hash using password_verify()
         $stmt_check = $pdo->prepare("SELECT password_hash FROM cpsys_users WHERE id = ?");
         $stmt_check->execute([$user_id]);
         $current_hash_db = $stmt_check->fetchColumn();
-        if (!hash_equals($current_hash_db, $current_hash_check)) {
+
+        if (!$current_hash_db || !password_verify($current_password, $current_hash_db)) {
             json_error('当前密码不正确。', 403);
         }
     }
@@ -618,7 +624,8 @@ function handle_profile_save(PDO $pdo, array $config, array $input_data): void {
     $params = [':display_name' => $display_name, ':email' => $email, ':id' => $user_id];
     $password_sql = "";
     if (!empty($new_password)) {
-        $params[':password_hash'] = hash('sha256', $new_password);
+        // [GEMINI SECURITY FIX V1.0] Store new password using Bcrypt
+        $params[':password_hash'] = password_hash($new_password, PASSWORD_BCRYPT);
         $password_sql = ", password_hash = :password_hash";
     }
 
@@ -952,3 +959,4 @@ return [
     // --- END: 缺失的注册条目 ---
 
 ];
+}
