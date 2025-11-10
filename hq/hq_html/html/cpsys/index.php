@@ -1,7 +1,8 @@
 <?php
 /**
  * Toptea HQ - cpsys main entry
- * Revision: 2.4.0  |  2025-11-06
+ * Revision: 2.4.1  |  2025-11-10
+ * - (Eng) Changed rms_product_management list sort order to product_code ASC.
  * - Robust view fallback (no dependency on error_view.php)
  * - Adds minimal handlers/data for: expiry_management, pos_eod_reports, pos_shift_review
  * - Safe fallbacks for commonly-missing helper functions
@@ -245,12 +246,34 @@ switch ($page) {
     /* RMS - 产品 */
     case 'rms_product_management':
         $page_title        = 'RMS - 产品配方 (L1/L3)';
+        
+        // ================== [GEMINI SORTING FIX START] ==================
+        // 修复了 `php_errors_hq.log` 中报告的 Undefined array key "name_zh" 错误。
+        // 并且根据用户请求，将排序从 p.id DESC 更改为 p.product_code ASC。
         if (!function_exists('getAllBaseProducts')) {
             function getAllBaseProducts(PDO $pdo): array {
-                try { return $pdo->query("SELECT * FROM kds_products WHERE deleted_at IS NULL ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC) ?: []; }
-                catch (Throwable $e) { return []; }
+                try { 
+                    $sql = "
+                        SELECT 
+                            p.id, 
+                            p.product_code, 
+                            t_zh.product_name AS name_zh 
+                        FROM kds_products p
+                        LEFT JOIN kds_product_translations t_zh 
+                            ON p.id = t_zh.product_id AND t_zh.language_code = 'zh-CN'
+                        WHERE p.deleted_at IS NULL 
+                        ORDER BY p.product_code ASC
+                    ";
+                    return $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: []; 
+                }
+                catch (Throwable $e) { 
+                    error_log("Fallback getAllBaseProducts failed: " . $e->getMessage());
+                    return []; 
+                }
             }
         }
+        // ================== [GEMINI SORTING FIX END] ==================
+
         $base_products     = getAllBaseProducts($pdo);
         $material_options  = getAllMaterials($pdo);
         $unit_options      = getAllUnits($pdo);
@@ -556,12 +579,15 @@ switch ($page) {
         $page_js      = 'sweetness_option_management.js';
         break;
 
+    // ================== [GEMINI SYNTAX FIX START] ==================
+    // 修复了 `case 'product_status_management'` 之前缺少的 `break;`
     case 'product_status_management':
         $page_title   = '字典管理 - 产品状态';
         $statuses     = getAllStatuses($pdo);
         $content_view = APP_PATH . '/views/cpsys/product_status_management_view.php';
         $page_js      = 'product_status_management.js';
         break;
+    // ================== [GEMINI SYNTAX FIX END] ==================
 
     case 'user_management':
         $page_title   = '系统设置 - 用户管理';

@@ -744,13 +744,18 @@ function handle_shift_review(PDO $pdo, array $config, array $input_data): void {
         $cash_diff = $counted_cash - $expected_cash;
         $stmt_update = $pdo->prepare("UPDATE pos_shifts SET counted_cash = ?, cash_variance = ?, admin_reviewed = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
         $stmt_update->execute([$counted_cash, $cash_diff, $shift_id]);
+        
+        // ================== [GEMINI HEALTH CHECK FIX START] ==================
+        // 移除了对 `pos_eod_records.notes` 字段的写入，因为该字段不存在。
         try {
-            $stmt_eod = $pdo->prepare("UPDATE pos_eod_records SET counted_cash = ?, cash_diff = ?, notes = CONCAT(COALESCE(notes, ''), ' | Admin Reviewed') WHERE shift_id = ?");
+            $stmt_eod = $pdo->prepare("UPDATE pos_eod_records SET counted_cash = ?, cash_diff = ? WHERE shift_id = ?");
             $stmt_eod->execute([$counted_cash, $cash_diff, $shift_id]);
         } catch (PDOException $e) {
             if ($e->getCode() !== '42S02') { throw $e; }
             error_log("Warning: pos_eod_records table not found during shift review. Skipping update.");
         }
+        // ================== [GEMINI HEALTH CHECK FIX END] ==================
+
         $pdo->commit();
         json_ok(null, '班次复核成功！');
     } catch (Exception $e) { if ($pdo->inTransaction()) $pdo->rollBack(); json_error('班次复核失败', 500, ['debug' => $e->getMessage()]); }
