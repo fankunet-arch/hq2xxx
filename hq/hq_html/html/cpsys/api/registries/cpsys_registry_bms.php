@@ -10,7 +10,7 @@
  * - JS 提交的 datetime-local (如 '2025-11-20T10:00') 是马德里本地时间。
  * - 必须将其转换为 UTC 时间字符串后再存入 `timestamp` 字段。
  *
- * [A2.2 UTC FIX]:
+ * [A1.02 UTC FIX]:
  * - 修复了 A2 阶段的严重 Bug：
  * - `deleted_at` 字段 (如 pos_categories, pos_menu_items 等) 和 pos_shifts.updated_at
  * 是 `TIMESTAMP` (0精度)，不是 `TIMESTAMP(6)`。
@@ -18,14 +18,23 @@
  * - 现为这些字段统一使用 `Y-m-d H:i:s` (0精度) 格式。
  * - 仅在 `pos_invoices.issued_at` (timestamp(6)) 字段上保留 .u (毫秒) 格式。
  *
- * [A2 UTC SYNC]:
+ * [A1.01 UTC SYNC]:
  * - 引入 datetime_helper.php (utc_now())
+ *
+ * [A1 UTC-CORE-MODIFICATION]:
+ * - (新增) 引入 $now_utc_str 和 $now_utc_str_6。
+ * - (修复) 为所有 INSERT/UPDATE 操作显式添加 created_at/updated_at，不再依赖数据库默认值。
  */
 
 require_once realpath(__DIR__ . '/../../../../app/helpers/kds_helper.php');
 require_once realpath(__DIR__ . '/../../../../app/helpers/auth_helper.php');
 // [A2 UTC SYNC] 引入时间助手
 require_once realpath(__DIR__ . '/../../../../app/helpers/datetime_helper.php');
+
+// [A4 UTC-CORE-MODIFICATION] START
+$now_utc_str   = utc_now()->format('Y-m-d H:i:s');   // 0精度
+$now_utc_str_6 = utc_now()->format('Y-m-d H:i:s.u'); // 6精度
+// [A4 UTC-CORE-MODIFICATION] END
 
 
 // --- 处理器: POS 分类 (pos_categories) ---
@@ -37,6 +46,7 @@ function handle_pos_category_get(PDO $pdo, array $config, array $input_data): vo
     $data ? json_ok($data) : json_error('未找到分类', 404);
 }
 function handle_pos_category_save(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $data = $input_data['data'] ?? json_error('缺少 data', 400);
     $id = $data['id'] ? (int)$data['id'] : null;
     $code = trim($data['category_code'] ?? '');
@@ -51,20 +61,23 @@ function handle_pos_category_save(PDO $pdo, array $config, array $input_data): v
     if ($stmt_check->fetch()) json_error('分类编码 "' . htmlspecialchars($code) . '" 已被使用。', 409);
 
     if ($id) {
-        $stmt = $pdo->prepare("UPDATE pos_categories SET category_code = ?, name_zh = ?, name_es = ?, sort_order = ? WHERE id = ?");
-        $stmt->execute([$code, $name_zh, $name_es, $sort, $id]);
+        // [A4 UTC-CORE-MODIFICATION]
+        $stmt = $pdo->prepare("UPDATE pos_categories SET category_code = ?, name_zh = ?, name_es = ?, sort_order = ?, updated_at = ? WHERE id = ?");
+        $stmt->execute([$code, $name_zh, $name_es, $sort, $now_utc_str, $id]);
         json_ok(['id' => $id], '分类已成功更新！');
     } else {
-        $stmt = $pdo->prepare("INSERT INTO pos_categories (category_code, name_zh, name_es, sort_order) VALUES (?, ?, ?, ?)");
-        $stmt->execute([$code, $name_zh, $name_es, $sort]);
+        // [A4 UTC-CORE-MODIFICATION]
+        $stmt = $pdo->prepare("INSERT INTO pos_categories (category_code, name_zh, name_es, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$code, $name_zh, $name_es, $sort, $now_utc_str, $now_utc_str]);
         json_ok(['id' => (int)$pdo->lastInsertId()], '新分类已成功创建！');
     }
 }
 function handle_pos_category_delete(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
     // [A2.2 UTC FIX] 
     // pos_categories.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // $now_utc_str = utc_now()->format('Y-m-d H:i:s'); // [A4 UTC-CORE-MODIFICATION] (已移到顶部)
     $stmt = $pdo->prepare("UPDATE pos_categories SET deleted_at = ? WHERE id = ?");
     $stmt->execute([$now_utc_str, (int)$id]);
     json_ok(null, '分类已成功删除。');
@@ -79,6 +92,7 @@ function handle_menu_item_get(PDO $pdo, array $config, array $input_data): void 
     $data ? json_ok($data) : json_error('未找到商品', 404);
 }
 function handle_menu_item_save(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $data = $input_data['data'] ?? json_error('缺少 data', 400);
     $id = $data['id'] ? (int)$data['id'] : null;
     $params = [
@@ -91,24 +105,31 @@ function handle_menu_item_save(PDO $pdo, array $config, array $input_data): void
         ':is_active' => (int)($data['is_active'] ?? 0)
     ];
     if (empty($params[':name_zh']) || empty($params[':name_es']) || empty($params[':pos_category_id'])) json_error('双语名称和POS分类均为必填项。', 400);
+    
+    // [A4 UTC-CORE-MODIFICATION]
+    $params[':now'] = $now_utc_str;
+
     if ($id) {
         $params[':id'] = $id;
-        $sql = "UPDATE pos_menu_items SET name_zh = :name_zh, name_es = :name_es, pos_category_id = :pos_category_id, description_zh = :description_zh, description_es = :description_es, sort_order = :sort_order, is_active = :is_active WHERE id = :id";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "UPDATE pos_menu_items SET name_zh = :name_zh, name_es = :name_es, pos_category_id = :pos_category_id, description_zh = :description_zh, description_es = :description_es, sort_order = :sort_order, is_active = :is_active, updated_at = :now WHERE id = :id";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => $id], '商品信息已成功更新！');
     } else {
-        $sql = "INSERT INTO pos_menu_items (name_zh, name_es, pos_category_id, description_zh, description_es, sort_order, is_active) VALUES (:name_zh, :name_es, :pos_category_id, :description_zh, :description_es, :sort_order, :is_active)";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "INSERT INTO pos_menu_items (name_zh, name_es, pos_category_id, description_zh, description_es, sort_order, is_active, created_at, updated_at) VALUES (:name_zh, :name_es, :pos_category_id, :description_zh, :description_es, :sort_order, :is_active, :now, :now)";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => (int)$pdo->lastInsertId()], '新商品已成功创建！');
     }
 }
 function handle_menu_item_delete(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
     $id = (int)$id;
 
     // [A2.2 UTC FIX] 
     // pos_menu_items.deleted_at 和 pos_item_variants.deleted_at 都是 timestamp(0)。
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // $now_utc_str = utc_now()->format('Y-m-d H:i:s'); // [A4 UTC-CORE-MODIFICATION] (已移到顶部)
     
     $pdo->beginTransaction();
     $stmt_variants = $pdo->prepare("UPDATE pos_item_variants SET deleted_at = ? WHERE menu_item_id = ?");
@@ -331,6 +352,7 @@ function handle_variant_get(PDO $pdo, array $config, array $input_data): void {
     $row ? json_ok($row) : json_error('记录不存在', 404);
 }
 function handle_variant_save(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $d = $input_data['data'] ?? json_error('缺少 data', 400);
     $id              = isset($d['id']) ? (int)$d['id'] : null;
     $menu_item_id    = isset($d['menu_item_id']) ? (int)$d['menu_item_id'] : 0;
@@ -352,13 +374,15 @@ function handle_variant_save(PDO $pdo, array $config, array $input_data): void {
         }
     }
     if ($id) {
-        $sql = "UPDATE pos_item_variants SET variant_name_zh = ?, variant_name_es = ?, price_eur = ?, sort_order = ?, is_default = ? WHERE id = ? AND deleted_at IS NULL";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "UPDATE pos_item_variants SET variant_name_zh = ?, variant_name_es = ?, price_eur = ?, sort_order = ?, is_default = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL";
         $stmt = $pdo->prepare($sql);
-        $stmt->execute([$variant_name_zh, $variant_name_es, $price_eur, $sort_order, $is_default, $id]);
+        $stmt->execute([$variant_name_zh, $variant_name_es, $price_eur, $sort_order, $is_default, $now_utc_str, $id]);
     } else {
-        $sql = "INSERT INTO pos_item_variants (menu_item_id, variant_name_zh, variant_name_es, price_eur, is_default, sort_order) VALUES (?, ?, ?, ?, ?, ?)";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "INSERT INTO pos_item_variants (menu_item_id, variant_name_zh, variant_name_es, price_eur, is_default, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $pdo->prepare($sql);
-        $stmt->execute([$menu_item_id, $variant_name_zh, $variant_name_es, $price_eur, $is_default, $sort_order]);
+        $stmt->execute([$menu_item_id, $variant_name_zh, $variant_name_es, $price_eur, $is_default, $sort_order, $now_utc_str, $now_utc_str]);
         $id = (int)$pdo->lastInsertId();
     }
     if ($is_default === 1) {
@@ -369,10 +393,11 @@ function handle_variant_save(PDO $pdo, array $config, array $input_data): void {
     json_ok(['id' => $id], '规格已保存');
 }
 function handle_variant_delete(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
     // [A2.2 UTC FIX] 
     // pos_item_variants.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // $now_utc_str = utc_now()->format('Y-m-d H:i:s'); // [A4 UTC-CORE-MODIFICATION] (已移到顶部)
     $stmt = $pdo->prepare("UPDATE pos_item_variants SET deleted_at = ? WHERE id = ?");
     $stmt->execute([$now_utc_str, (int)$id]);
     json_ok(null, '规格已删除');
@@ -387,6 +412,7 @@ function handle_addon_get(PDO $pdo, array $config, array $input_data): void {
     $data ? json_ok($data) : json_error('未找到加料', 404);
 }
 function handle_addon_save(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $data = $input_data['data'] ?? json_error('缺少 data', 400);
     $id = $data['id'] ? (int)$data['id'] : null;
     $params = [
@@ -404,22 +430,29 @@ function handle_addon_save(PDO $pdo, array $config, array $input_data): void {
     $stmt_check = $pdo->prepare($sql_check);
     $stmt_check->execute($params_check);
     if ($stmt_check->fetch()) json_error('此编码 (KEY)已被使用。', 409);
+    
+    // [A4 UTC-CORE-MODIFICATION]
+    $params[':now'] = $now_utc_str;
+
     if ($id) {
         $params[':id'] = $id;
-        $sql = "UPDATE pos_addons SET addon_code = :addon_code, name_zh = :name_zh, name_es = :name_es, price_eur = :price_eur, material_id = :material_id, sort_order = :sort_order, is_active = :is_active WHERE id = :id";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "UPDATE pos_addons SET addon_code = :addon_code, name_zh = :name_zh, name_es = :name_es, price_eur = :price_eur, material_id = :material_id, sort_order = :sort_order, is_active = :is_active, updated_at = :now WHERE id = :id";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => $id], '加料已成功更新！');
     } else {
-        $sql = "INSERT INTO pos_addons (addon_code, name_zh, name_es, price_eur, material_id, sort_order, is_active) VALUES (:addon_code, :name_zh, :name_es, :price_eur, :material_id, :sort_order, :is_active)";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "INSERT INTO pos_addons (addon_code, name_zh, name_es, price_eur, material_id, sort_order, is_active, created_at, updated_at) VALUES (:addon_code, :name_zh, :name_es, :price_eur, :material_id, :sort_order, :is_active, :now, :now)";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => (int)$pdo->lastInsertId()], '新加料已成功创建！');
     }
 }
 function handle_addon_delete(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
     // [A2.2 UTC FIX] 
     // pos_addons.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // $now_utc_str = utc_now()->format('Y-m-d H:i:s'); // [A4 UTC-CORE-MODIFICATION] (已移到顶部)
     $stmt = $pdo->prepare("UPDATE pos_addons SET deleted_at = ? WHERE id = ?");
     $stmt->execute([$now_utc_str, (int)$id]);
     json_ok(null, '加料已成功删除。');
@@ -432,6 +465,7 @@ function handle_member_level_get(PDO $pdo, array $config, array $input_data): vo
     $data ? json_ok($data) : json_error('未找到等级', 404);
 }
 function handle_member_level_save(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $data = $input_data['data'] ?? json_error('缺少 data', 400);
     $id = $data['id'] ? (int)$data['id'] : null;
     $params = [
@@ -442,18 +476,25 @@ function handle_member_level_save(PDO $pdo, array $config, array $input_data): v
         ':level_up_promo_id' => !empty($data['level_up_promo_id']) ? (int)$data['level_up_promo_id'] : null,
     ];
     if (empty($params[':level_name_zh']) || empty($params[':level_name_es'])) json_error('双语等级名称均为必填项。', 400);
+    
+    // [A4 UTC-CORE-MODIFICATION]
+    $params[':now'] = $now_utc_str;
+
     if ($id) {
         $params[':id'] = $id;
-        $sql = "UPDATE pos_member_levels SET level_name_zh = :level_name_zh, level_name_es = :level_name_es, points_threshold = :points_threshold, sort_order = :sort_order, level_up_promo_id = :level_up_promo_id WHERE id = :id";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "UPDATE pos_member_levels SET level_name_zh = :level_name_zh, level_name_es = :level_name_es, points_threshold = :points_threshold, sort_order = :sort_order, level_up_promo_id = :level_up_promo_id, updated_at = :now WHERE id = :id";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => $id], '会员等级已成功更新！');
     } else {
-        $sql = "INSERT INTO pos_member_levels (level_name_zh, level_name_es, points_threshold, sort_order, level_up_promo_id) VALUES (:level_name_zh, :level_name_es, :points_threshold, :sort_order, :level_up_promo_id)";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "INSERT INTO pos_member_levels (level_name_zh, level_name_es, points_threshold, sort_order, level_up_promo_id, created_at, updated_at) VALUES (:level_name_zh, :level_name_es, :points_threshold, :sort_order, :level_up_promo_id, :now, :now)";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => (int)$pdo->lastInsertId()], '新会员等级已成功创建！');
     }
 }
 function handle_member_level_delete(PDO $pdo, array $config, array $input_data): void {
+    // [A4 UTC-CORE-MODIFICATION] 表中无 deleted_at，执行硬删除
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
     $stmt = $pdo->prepare("DELETE FROM pos_member_levels WHERE id = ?");
     $stmt->execute([(int)$id]);
@@ -467,6 +508,7 @@ function handle_member_get(PDO $pdo, array $config, array $input_data): void {
     $data ? json_ok($data) : json_error('未找到会员', 404);
 }
 function handle_member_save(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $data = $input_data['data'] ?? json_error('缺少 data', 400);
     $id = $data['id'] ? (int)$data['id'] : null;
     $phone = trim($data['phone_number'] ?? '');
@@ -485,23 +527,30 @@ function handle_member_save(PDO $pdo, array $config, array $input_data): void {
         ':member_level_id' => !empty($data['member_level_id']) ? (int)$data['member_level_id'] : null,
         ':is_active' => isset($data['is_active']) ? (int)$data['is_active'] : 1
     ];
+
+    // [A4 UTC-CORE-MODIFICATION]
+    $params[':now'] = $now_utc_str;
+
     if ($id) {
         $params[':id'] = $id;
-        $sql = "UPDATE pos_members SET phone_number = :phone_number, first_name = :first_name, last_name = :last_name, email = :email, birthdate = :birthdate, points_balance = :points_balance, member_level_id = :member_level_id, is_active = :is_active WHERE id = :id";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "UPDATE pos_members SET phone_number = :phone_number, first_name = :first_name, last_name = :last_name, email = :email, birthdate = :birthdate, points_balance = :points_balance, member_level_id = :member_level_id, is_active = :is_active, updated_at = :now WHERE id = :id";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => $id], '会员信息已成功更新！');
     } else {
         $params[':member_uuid'] = bin2hex(random_bytes(16));
-        $sql = "INSERT INTO pos_members (member_uuid, phone_number, first_name, last_name, email, birthdate, points_balance, member_level_id, is_active) VALUES (:member_uuid, :phone_number, :first_name, :last_name, :email, :birthdate, :points_balance, :member_level_id, :is_active)";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "INSERT INTO pos_members (member_uuid, phone_number, first_name, last_name, email, birthdate, points_balance, member_level_id, is_active, created_at, updated_at) VALUES (:member_uuid, :phone_number, :first_name, :last_name, :email, :birthdate, :points_balance, :member_level_id, :is_active, :now, :now)";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => (int)$pdo->lastInsertId()], '新会员已成功创建！');
     }
 }
 function handle_member_delete(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
     // [A2.2 UTC FIX] 
     // pos_members.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // $now_utc_str = utc_now()->format('Y-m-d H:i:s'); // [A4 UTC-CORE-MODIFICATION] (已移到顶部)
     $stmt = $pdo->prepare("UPDATE pos_members SET deleted_at = ? WHERE id = ?");
     $stmt->execute([$now_utc_str, (int)$id]);
     json_ok(null, '会员已成功删除。');
@@ -516,6 +565,7 @@ function handle_redemption_rule_get(PDO $pdo, array $config, array $input_data):
     $rule ? json_ok($rule) : json_error('未找到指定的规则。', 404);
 }
 function handle_redemption_rule_save(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $data = $input_data['data'] ?? json_error('缺少 data', 400);
     $id = $data['id'] ? (int)$data['id'] : null;
     $name_zh = trim($data['rule_name_zh'] ?? ''); $name_es = trim($data['rule_name_es'] ?? '');
@@ -538,22 +588,29 @@ function handle_redemption_rule_save(PDO $pdo, array $config, array $input_data)
         ':reward_type' => $reward_type, ':reward_value_decimal' => $reward_value_decimal,
         ':reward_promo_id' => $reward_promo_id, ':is_active' => $is_active
     ];
+    
+    // [A4 UTC-CORE-MODIFICATION]
+    $params[':now'] = $now_utc_str;
+
     if ($id) {
         $params[':id'] = $id;
-        $sql = "UPDATE pos_point_redemption_rules SET rule_name_zh = :rule_name_zh, rule_name_es = :rule_name_es, points_required = :points_required, reward_type = :reward_type, reward_value_decimal = :reward_value_decimal, reward_promo_id = :reward_promo_id, is_active = :is_active WHERE id = :id AND deleted_at IS NULL";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "UPDATE pos_point_redemption_rules SET rule_name_zh = :rule_name_zh, rule_name_es = :rule_name_es, points_required = :points_required, reward_type = :reward_type, reward_value_decimal = :reward_value_decimal, reward_promo_id = :reward_promo_id, is_active = :is_active, updated_at = :now WHERE id = :id AND deleted_at IS NULL";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => $id], '兑换规则已成功更新！');
     } else {
-        $sql = "INSERT INTO pos_point_redemption_rules (rule_name_zh, rule_name_es, points_required, reward_type, reward_value_decimal, reward_promo_id, is_active) VALUES (:rule_name_zh, :rule_name_es, :points_required, :reward_type, :reward_value_decimal, :reward_promo_id, :is_active)";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "INSERT INTO pos_point_redemption_rules (rule_name_zh, rule_name_es, points_required, reward_type, reward_value_decimal, reward_promo_id, is_active, created_at, updated_at) VALUES (:rule_name_zh, :rule_name_es, :points_required, :reward_type, :reward_value_decimal, :reward_promo_id, :is_active, :now, :now)";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => (int)$pdo->lastInsertId()], '新兑换规则已成功创建！');
     }
 }
 function handle_redemption_rule_delete(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
     // [A2.2 UTC FIX] 
     // pos_point_redemption_rules.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // $now_utc_str = utc_now()->format('Y-m-d H:i:s'); // [A4 UTC-CORE-MODIFICATION] (已移到顶部)
     $stmt = $pdo->prepare("UPDATE pos_point_redemption_rules SET deleted_at = ? WHERE id = ?");
     $stmt->execute([$now_utc_str, (int)$id]);
     json_ok(null, '兑换规则已成功删除。');
@@ -567,9 +624,11 @@ function handle_settings_load(PDO $pdo, array $config, array $input_data): void 
     json_ok($settings, 'Settings loaded.');
 }
 function handle_settings_save(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $settings_data = $input_data['settings'] ?? json_error('No settings data provided.', 400);
     $pdo->beginTransaction();
-    $stmt = $pdo->prepare("INSERT INTO pos_settings (setting_key, setting_value) VALUES (:key, :value) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+    // [A4 UTC-CORE-MODIFICATION]
+    $stmt = $pdo->prepare("INSERT INTO pos_settings (setting_key, setting_value, updated_at) VALUES (:key, :value, :now) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = VALUES(updated_at)");
     foreach ($settings_data as $key => $value) {
         if ($key === 'points_euros_per_point') {
             $floatVal = filter_var($value, FILTER_VALIDATE_FLOAT);
@@ -577,7 +636,8 @@ function handle_settings_save(PDO $pdo, array $config, array $input_data): void 
             $value = number_format($floatVal, 2, '.', '');
         }
         if (strpos($key, 'points_') === 0) {
-            $stmt->execute([':key' => $key, ':value' => $value]);
+            // [A4 UTC-CORE-MODIFICATION]
+            $stmt->execute([':key' => $key, ':value' => $value, ':now' => $now_utc_str]);
         }
     }
     $pdo->commit();
@@ -594,15 +654,18 @@ function handle_sif_load(PDO $pdo, array $config, array $input_data): void {
     json_ok(['declaration_text' => $value], 'Declaración cargada.');
 }
 function handle_sif_save(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     // SIF handler 不使用 'data' 包装器
     $declaration_text = $input_data['declaration_text'] ?? null;
     if ($declaration_text === null) json_error('No se proporcionó texto de declaración.', 400);
     $pdo->beginTransaction();
-    $stmt = $pdo->prepare("INSERT INTO pos_settings (setting_key, setting_value, description) VALUES (:key, :value, :desc) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+    // [A4 UTC-CORE-MODIFICATION]
+    $stmt = $pdo->prepare("INSERT INTO pos_settings (setting_key, setting_value, description, updated_at) VALUES (:key, :value, :desc, :now) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = VALUES(updated_at)");
     $stmt->execute([
         ':key' => SIF_SETTING_KEY,
         ':value' => $declaration_text,
-        ':desc' => 'Declaración Responsable (SIF Compliance Statement)'
+        ':desc' => 'Declaración Responsable (SIF Compliance Statement)',
+        ':now' => $now_utc_str // [A4 UTC-CORE-MODIFICATION]
     ]);
     $pdo->commit();
     json_ok(null, 'Declaración Responsable guardada con éxito.');
@@ -618,6 +681,7 @@ function handle_promo_get(PDO $pdo, array $config, array $input_data): void {
     $promo ? json_ok($promo, '活动已加载。') : json_error('未找到指定的活动。', 404);
 }
 function handle_promo_save(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $data = $input_data['data'] ?? json_error('缺少 data', 400);
     $id   = !empty($data['id']) ? (int)$data['id'] : null;
     $promo_name         = trim((string)($data['promo_name'] ?? ''));
@@ -668,16 +732,19 @@ function handle_promo_save(PDO $pdo, array $config, array $input_data): void {
     
     $codeValue = ($promo_trigger_type === 'COUPON_CODE' ? $promo_code : null);
     if ($id) {
-        $stmt = $pdo->prepare("UPDATE pos_promotions SET promo_name = ?, promo_priority = ?, promo_exclusive = ?, promo_is_active = ?, promo_trigger_type = ?, promo_code = ?, promo_conditions = ?, promo_actions = ?, promo_start_date = ?, promo_end_date = ? WHERE id = ?");
-        $stmt->execute([$promo_name, $promo_priority, $promo_exclusive, $promo_is_active, $promo_trigger_type, $codeValue, $promo_conditions, $promo_actions, $startDate, $endDate, $id]);
+        // [A4 UTC-CORE-MODIFICATION]
+        $stmt = $pdo->prepare("UPDATE pos_promotions SET promo_name = ?, promo_priority = ?, promo_exclusive = ?, promo_is_active = ?, promo_trigger_type = ?, promo_code = ?, promo_conditions = ?, promo_actions = ?, promo_start_date = ?, promo_end_date = ?, updated_at = ? WHERE id = ?");
+        $stmt->execute([$promo_name, $promo_priority, $promo_exclusive, $promo_is_active, $promo_trigger_type, $codeValue, $promo_conditions, $promo_actions, $startDate, $endDate, $now_utc_str, $id]);
         json_ok(['id' => $id], '活动已成功更新！');
     } else {
-        $stmt = $pdo->prepare("INSERT INTO pos_promotions (promo_name, promo_priority, promo_exclusive, promo_is_active, promo_trigger_type, promo_code, promo_conditions, promo_actions, promo_start_date, promo_end_date) VALUES (?,?,?,?,?,?,?,?,?,?)");
-        $stmt->execute([$promo_name, $promo_priority, $promo_exclusive, $promo_is_active, $promo_trigger_type, $codeValue, $promo_conditions, $promo_actions, $startDate, $endDate]);
+        // [A4 UTC-CORE-MODIFICATION]
+        $stmt = $pdo->prepare("INSERT INTO pos_promotions (promo_name, promo_priority, promo_exclusive, promo_is_active, promo_trigger_type, promo_code, promo_conditions, promo_actions, promo_start_date, promo_end_date, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+        $stmt->execute([$promo_name, $promo_priority, $promo_exclusive, $promo_is_active, $promo_trigger_type, $codeValue, $promo_conditions, $promo_actions, $startDate, $endDate, $now_utc_str, $now_utc_str]);
         json_ok(['id' => (int)$pdo->lastInsertId()], '新活动已成功创建！');
     }
 }
 function handle_promo_delete(PDO $pdo, array $config, array $input_data): void {
+    // [A4 UTC-CORE-MODIFICATION] 表中无 deleted_at，执行硬删除
     $id = $input_data['id'] ?? json_error('无效的ID。', 400);
     $stmt = $pdo->prepare("DELETE FROM pos_promotions WHERE id = ?");
     $stmt->execute([(int)$id]);
@@ -686,6 +753,7 @@ function handle_promo_delete(PDO $pdo, array $config, array $input_data): void {
 
 // --- 处理器: 票据操作 (invoices) ---
 function handle_invoice_cancel(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str, $now_utc_str_6; // [A4 UTC-CORE-MODIFICATION]
     $original_invoice_id = (int)($input_data['id'] ?? 0);
     $cancellation_reason = trim($input_data['reason'] ?? 'Error en la emisión');
     if ($original_invoice_id <= 0) json_error('无效的原始票据ID。', 400);
@@ -712,7 +780,8 @@ function handle_invoice_cancel(PDO $pdo, array $config, array $input_data): void
         $series = $original_invoice['series'];
         // [A2.2 UTC FIX] 
         // pos_invoices.issued_at 是 timestamp(6)，必须使用 .u
-        $issued_at = utc_now()->format('Y-m-d H:i:s.u');
+        $issued_at = $now_utc_str_6; // [A4 UTC-CORE-MODIFICATION]
+        // $issued_at = utc_now()->format('Y-m-d H:i:s.u'); // [A2 UTC SYNC]
         $stmt_store = $pdo->prepare("SELECT tax_id FROM kds_stores WHERE id = ?");
         $stmt_store->execute([$store_id]);
         $store_config = $stmt_store->fetch();
@@ -724,17 +793,20 @@ function handle_invoice_cancel(PDO $pdo, array $config, array $input_data): void
         $cancellationData = ['cancellation_reason' => $cancellation_reason, 'issued_at' => $issued_at];
         $compliance_data = $handler->generateCancellationData($pdo, $original_invoice, $cancellationData, $previous_hash);
         $next_number = 1 + ($pdo->query("SELECT IFNULL(MAX(number), 0) FROM pos_invoices WHERE compliance_system = '{$compliance_system}' AND series = '{$series}' AND issuer_nif = '{$issuer_nif}'")->fetchColumn());
-        $sql_cancel = "INSERT INTO pos_invoices (invoice_uuid, store_id, user_id, issuer_nif, series, `number`, issued_at, invoice_type, status, cancellation_reason, references_invoice_id, compliance_system, compliance_data, taxable_base, vat_amount, final_total) VALUES ( ?, ?, ?, ?, ?, ?, ?, 'R5', 'ISSUED', ?, ?, ?, ?, 0.00, 0.00, 0.00 )";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql_cancel = "INSERT INTO pos_invoices (invoice_uuid, store_id, user_id, issuer_nif, series, `number`, issued_at, invoice_type, status, cancellation_reason, references_invoice_id, compliance_system, compliance_data, taxable_base, vat_amount, final_total, created_at, updated_at) VALUES ( ?, ?, ?, ?, ?, ?, ?, 'R5', 'ISSUED', ?, ?, ?, ?, 0.00, 0.00, 0.00, ?, ? )";
         $stmt_cancel = $pdo->prepare($sql_cancel);
-        $stmt_cancel->execute([ uniqid('can-', true), $store_id, $_SESSION['user_id'] ?? 1, $issuer_nif, $series, $next_number, $issued_at, $cancellation_reason, $original_invoice_id, $compliance_system, json_encode($compliance_data) ]);
+        $stmt_cancel->execute([ uniqid('can-', true), $store_id, $_SESSION['user_id'] ?? 1, $issuer_nif, $series, $next_number, $issued_at, $cancellation_reason, $original_invoice_id, $compliance_system, json_encode($compliance_data), $now_utc_str_6, $now_utc_str_6 ]);
         $cancellation_invoice_id = $pdo->lastInsertId();
-        $stmt_update_original = $pdo->prepare("UPDATE pos_invoices SET status = 'CANCELLED', cancellation_reason = ? WHERE id = ?");
-        $stmt_update_original->execute([$cancellation_reason, $original_invoice_id]);
+        // [A4 UTC-CORE-MODIFICATION]
+        $stmt_update_original = $pdo->prepare("UPDATE pos_invoices SET status = 'CANCELLED', cancellation_reason = ?, updated_at = ? WHERE id = ?");
+        $stmt_update_original->execute([$cancellation_reason, $now_utc_str_6, $original_invoice_id]);
         $pdo->commit();
         json_ok(['cancellation_invoice_id' => $cancellation_invoice_id], '票据已成功作废并生成作废记录。');
     } catch (Exception $e) { if ($pdo->inTransaction()) $pdo->rollBack(); json_error('作废票据失败。', 500, ['debug' => $e->getMessage()]); }
 }
 function handle_invoice_correct(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str_6; // [A4 UTC-CORE-MODIFICATION]
     $original_invoice_id = (int)($input_data['id'] ?? 0);
     $correction_type = $input_data['type'] ?? '';
     $new_total_str = $input_data['new_total'] ?? null;
@@ -773,7 +845,8 @@ function handle_invoice_correct(PDO $pdo, array $config, array $input_data): voi
         $series = $original_invoice['series'];
         // [A2.2 UTC FIX] 
         // pos_invoices.issued_at 是 timestamp(6)，必须使用 .u
-        $issued_at = utc_now()->format('Y-m-d H:i:s.u');
+        $issued_at = $now_utc_str_6; // [A4 UTC-CORE-MODIFICATION]
+        // $issued_at = utc_now()->format('Y-m-d H:i:s.u'); // [A2 UTC SYNC]
         $stmt_prev = $pdo->prepare("SELECT compliance_data FROM pos_invoices WHERE compliance_system = ? AND series = ? AND issuer_nif = ? ORDER BY `number` DESC LIMIT 1");
         $stmt_prev->execute([$compliance_system, $series, $issuer_nif]);
         $prev_invoice = $stmt_prev->fetch();
@@ -781,9 +854,10 @@ function handle_invoice_correct(PDO $pdo, array $config, array $input_data): voi
         $next_number = 1 + ($pdo->query("SELECT IFNULL(MAX(number), 0) FROM pos_invoices WHERE compliance_system = '{$compliance_system}' AND series = '{$series}' AND issuer_nif = '{$issuer_nif}'")->fetchColumn());
         $invoiceData = ['series' => $series, 'number' => $next_number, 'issued_at' => $issued_at, 'final_total' => $final_total];
         $compliance_data = $handler->generateComplianceData($pdo, $invoiceData, $previous_hash);
-        $sql_corrective = "INSERT INTO pos_invoices (invoice_uuid, store_id, user_id, issuer_nif, series, `number`, issued_at, invoice_type, status, correction_type, references_invoice_id, compliance_system, compliance_data, taxable_base, vat_amount, final_total) VALUES (?, ?, ?, ?, ?, ?, ?, 'R5', 'ISSUED', ?, ?, ?, ?, ?, ?, ?)";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql_corrective = "INSERT INTO pos_invoices (invoice_uuid, store_id, user_id, issuer_nif, series, `number`, issued_at, invoice_type, status, correction_type, references_invoice_id, compliance_system, compliance_data, taxable_base, vat_amount, final_total, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'R5', 'ISSUED', ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt_corrective = $pdo->prepare($sql_corrective);
-        $stmt_corrective->execute([ uniqid('cor-', true), $store_id, $_SESSION['user_id'] ?? 1, $issuer_nif, $series, $next_number, $issued_at, $correction_type, $original_invoice_id, $compliance_system, json_encode($compliance_data), $taxable_base, $vat_amount, $final_total ]);
+        $stmt_corrective->execute([ uniqid('cor-', true), $store_id, $_SESSION['user_id'] ?? 1, $issuer_nif, $series, $next_number, $issued_at, $correction_type, $original_invoice_id, $compliance_system, json_encode($compliance_data), $taxable_base, $vat_amount, $final_total, $now_utc_str_6, $now_utc_str_6 ]);
         $corrective_invoice_id = $pdo->lastInsertId();
         $pdo->commit();
         json_ok(['corrective_invoice_id' => $corrective_invoice_id], '更正票据已成功生成。');
@@ -792,6 +866,7 @@ function handle_invoice_correct(PDO $pdo, array $config, array $input_data): voi
 
 // --- 处理器: 班次复核 (shifts) ---
 function handle_shift_review(PDO $pdo, array $config, array $input_data): void {
+    global $now_utc_str; // [A4 UTC-CORE-MODIFICATION]
     $shift_id = (int)($input_data['shift_id'] ?? 0);
     $counted_cash_str = $input_data['counted_cash'] ?? null;
     if ($shift_id <= 0 || $counted_cash_str === null || !is_numeric($counted_cash_str)) json_error('无效的参数 (shift_id or counted_cash)。', 400);
@@ -799,7 +874,7 @@ function handle_shift_review(PDO $pdo, array $config, array $input_data): void {
     
     // [A2.2 UTC FIX] 
     // pos_shifts.updated_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // $now_utc_str = utc_now()->format('Y-m-d H:i:s'); // [A4 UTC-CORE-MODIFICATION] (已移到顶部)
     
     $pdo->beginTransaction();
     try {

@@ -10,15 +10,15 @@
  * - 使其不再依赖 DB 端的 CURRENT_TIMESTAMP。
  * - 所有 INSERT/UPDATE 显式使用 utc_now() 设置 created_at 和 updated_at。
  *
- * [A3 UTC-CORE-FIX]:
+ * [A1.01 UTC-CORE-FIX]:
  * - 引入 datetime_helper.php
  * - 修复 cprms_material_delete 和 cprms_product_delete，使其使用 utc_now() (0精度)
  *
  * 关键修复：
- * - [V1.2.4] 修复 cprms_product_get_details 中 'sweets_option_id' 的拼写错误。
- * - [V1.2.4] 修复文件末尾多余的 '}' 语法错误。
- * - [V1.2.4] 为顶层 getMaterialById 兜底函数添加 image_url 字段。
- * - [V1.2.4] 为 cprms_material_save 添加 image_url 清理 (parse_url/basename)。
+ * - [V1.1.4] 修复 cprms_product_get_details 中 'sweets_option_id' 的拼写错误。
+ * - [V1.1.4] 修复文件末尾多余的 '}' 语法错误。
+ * - [V1.1.4] 为顶层 getMaterialById 兜底函数添加 image_url 字段。
+ * - [V1.1.4] 为 cprms_material_save 添加 image_url 清理 (parse_url/basename)。
  */
 
 // [A3 UTC-CORE-FIX] 引入时间助手
