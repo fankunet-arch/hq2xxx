@@ -2,19 +2,19 @@
 /**
  * Toptea HQ - CPSYS API 注册表 (BMS - POS Management)
  * 注册 POS 菜单、商品、会员、促销等资源
- * Version: 1.3.004 (A2 UTC Precision Fix)
- * Date: 2025-11-11
- *
- * [A2.2 UTC FIX]:
- * - 修复了 A2 阶段的严重 Bug：
- * - `deleted_at` 字段 (如 pos_categories, pos_menu_items 等) 和 pos_shifts.updated_at
- * 是 `TIMESTAMP` (0精度)，不是 `TIMESTAMP(6)`。
- * - 之前使用 .u (毫秒) 格式 (e.g., 'Y-m-d H:i:s.u') 导致 UPDATE 失败，deleted_at 保持 NULL。
- * - 现为这些字段统一使用 `Y-m-d H:i:s` (0精度) 格式。
- * - 仅在 `pos_invoices.issued_at` (timestamp(6)) 字段上保留 .u (毫秒) 格式。
+ * Version: 1.3.003 (A2 UTC Sync)
+ * Date: 2025-11-10
  *
  * [A2 UTC SYNC]:
  * - 引入 datetime_helper.php (utc_now())
+ * - 替换所有 (handle_*_delete) 的 CURRENT_TIMESTAMP 为 utc_now()
+ * - 替换 (handle_invoice_cancel, handle_invoice_correct) 的 Madrid DateTime 为 utc_now()
+ * - 替换 (handle_shift_review) 的 CURRENT_TIMESTAMP 为 utc_now()
+ *
+ * [GEMINI V1.3.002]: CRITICAL FIX - Removed `notes` field from pos_eod_records update in handle_shift_review, as the column does not exist in the schema.
+ * [GEMINI V1.3.001]: CRITICAL FIX - Replaced trailing '}' with ';' to fix PHP Parse Error (500).
+ * [GEMINI V1.3.000]: Added handle_menu_get_material_usage_report and registered 'get_material_usage_report' action.
+ * [GEMINI V1.2.005]: Added `mi.product_code` to the SELECT list in `handle_menu_get_with_materials` per user request.
  */
 
 require_once realpath(__DIR__ . '/../../../../app/helpers/kds_helper.php');
@@ -57,9 +57,8 @@ function handle_pos_category_save(PDO $pdo, array $config, array $input_data): v
 }
 function handle_pos_category_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A2.2 UTC FIX] 
-    // pos_categories.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // [A2 UTC SYNC] 替换 CURRENT_TIMESTAMP
+    $now_utc_str = utc_now()->format('Y-m-d H:i:s.u');
     $stmt = $pdo->prepare("UPDATE pos_categories SET deleted_at = ? WHERE id = ?");
     $stmt->execute([$now_utc_str, (int)$id]);
     json_ok(null, '分类已成功删除。');
@@ -101,9 +100,8 @@ function handle_menu_item_delete(PDO $pdo, array $config, array $input_data): vo
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
     $id = (int)$id;
 
-    // [A2.2 UTC FIX] 
-    // pos_menu_items.deleted_at 和 pos_item_variants.deleted_at 都是 timestamp(0)。
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // [A2 UTC SYNC] 替换 CURRENT_TIMESTAMP
+    $now_utc_str = utc_now()->format('Y-m-d H:i:s.u');
     
     $pdo->beginTransaction();
     $stmt_variants = $pdo->prepare("UPDATE pos_item_variants SET deleted_at = ? WHERE menu_item_id = ?");
@@ -365,9 +363,8 @@ function handle_variant_save(PDO $pdo, array $config, array $input_data): void {
 }
 function handle_variant_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A2.2 UTC FIX] 
-    // pos_item_variants.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // [A2 UTC SYNC] 替换 CURRENT_TIMESTAMP
+    $now_utc_str = utc_now()->format('Y-m-d H:i:s.u');
     $stmt = $pdo->prepare("UPDATE pos_item_variants SET deleted_at = ? WHERE id = ?");
     $stmt->execute([$now_utc_str, (int)$id]);
     json_ok(null, '规格已删除');
@@ -412,9 +409,8 @@ function handle_addon_save(PDO $pdo, array $config, array $input_data): void {
 }
 function handle_addon_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A2.2 UTC FIX] 
-    // pos_addons.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // [A2 UTC SYNC] 替换 CURRENT_TIMESTAMP
+    $now_utc_str = utc_now()->format('Y-m-d H:i:s.u');
     $stmt = $pdo->prepare("UPDATE pos_addons SET deleted_at = ? WHERE id = ?");
     $stmt->execute([$now_utc_str, (int)$id]);
     json_ok(null, '加料已成功删除。');
@@ -494,9 +490,8 @@ function handle_member_save(PDO $pdo, array $config, array $input_data): void {
 }
 function handle_member_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A2.2 UTC FIX] 
-    // pos_members.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // [A2 UTC SYNC] 替换 CURRENT_TIMESTAMP
+    $now_utc_str = utc_now()->format('Y-m-d H:i:s.u');
     $stmt = $pdo->prepare("UPDATE pos_members SET deleted_at = ? WHERE id = ?");
     $stmt->execute([$now_utc_str, (int)$id]);
     json_ok(null, '会员已成功删除。');
@@ -546,9 +541,8 @@ function handle_redemption_rule_save(PDO $pdo, array $config, array $input_data)
 }
 function handle_redemption_rule_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A2.2 UTC FIX] 
-    // pos_point_redemption_rules.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // [A2 UTC SYNC] 替换 CURRENT_TIMESTAMP
+    $now_utc_str = utc_now()->format('Y-m-d H:i:s.u');
     $stmt = $pdo->prepare("UPDATE pos_point_redemption_rules SET deleted_at = ? WHERE id = ?");
     $stmt->execute([$now_utc_str, (int)$id]);
     json_ok(null, '兑换规则已成功删除。');
@@ -635,11 +629,8 @@ function handle_promo_save(PDO $pdo, array $config, array $input_data): void {
         $dup->execute($params);
         if ($dup->fetch()) json_error('此优惠码已被其他活动使用。', 409);
     }
-    // [A2.2 UTC FIX] promo_start/end_date 是 DATETIME, 不是 TIMESTAMP(6)。
-    // 移除 .u
     $startDate = ($promo_start_date !== '' ? str_replace('T',' ', $promo_start_date) : null);
     $endDate = ($promo_end_date   !== '' ? str_replace('T',' ', $promo_end_date)   : null);
-    
     $codeValue = ($promo_trigger_type === 'COUPON_CODE' ? $promo_code : null);
     if ($id) {
         $stmt = $pdo->prepare("UPDATE pos_promotions SET promo_name = ?, promo_priority = ?, promo_exclusive = ?, promo_is_active = ?, promo_trigger_type = ?, promo_code = ?, promo_conditions = ?, promo_actions = ?, promo_start_date = ?, promo_end_date = ? WHERE id = ?");
@@ -684,8 +675,7 @@ function handle_invoice_cancel(PDO $pdo, array $config, array $input_data): void
         $handler_class = "{$compliance_system}Handler";
         $handler = new $handler_class();
         $series = $original_invoice['series'];
-        // [A2.2 UTC FIX] 
-        // pos_invoices.issued_at 是 timestamp(6)，必须使用 .u
+        // [A2 UTC SYNC] 替换 Madrid DateTime 为 utc_now()
         $issued_at = utc_now()->format('Y-m-d H:i:s.u');
         $stmt_store = $pdo->prepare("SELECT tax_id FROM kds_stores WHERE id = ?");
         $stmt_store->execute([$store_id]);
@@ -745,8 +735,7 @@ function handle_invoice_correct(PDO $pdo, array $config, array $input_data): voi
         $taxable_base = round($final_total / (1 + ($vat_rate / 100)), 2);
         $vat_amount = $final_total - $taxable_base;
         $series = $original_invoice['series'];
-        // [A2.2 UTC FIX] 
-        // pos_invoices.issued_at 是 timestamp(6)，必须使用 .u
+        // [A2 UTC SYNC] 替换 Madrid DateTime 为 utc_now()
         $issued_at = utc_now()->format('Y-m-d H:i:s.u');
         $stmt_prev = $pdo->prepare("SELECT compliance_data FROM pos_invoices WHERE compliance_system = ? AND series = ? AND issuer_nif = ? ORDER BY `number` DESC LIMIT 1");
         $stmt_prev->execute([$compliance_system, $series, $issuer_nif]);
@@ -771,9 +760,8 @@ function handle_shift_review(PDO $pdo, array $config, array $input_data): void {
     if ($shift_id <= 0 || $counted_cash_str === null || !is_numeric($counted_cash_str)) json_error('无效的参数 (shift_id or counted_cash)。', 400);
     $counted_cash = (float)$counted_cash_str;
     
-    // [A2.2 UTC FIX] 
-    // pos_shifts.updated_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // [A2 UTC SYNC] 替换 CURRENT_TIMESTAMP
+    $now_utc_str = utc_now()->format('Y-m-d H:i:s.u');
     
     $pdo->beginTransaction();
     try {
@@ -865,3 +853,4 @@ return [
         'custom_actions' => [ 'review' => 'handle_shift_review', ],
     ],
 ];
+}

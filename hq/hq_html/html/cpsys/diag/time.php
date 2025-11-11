@@ -3,17 +3,20 @@
  * Toptea HQ - CPSYS 平台
  * UTC 时间诊断页面 (A1 UTC SYNC)
  *
- * [A1 UTC SYNC] Phase A1: New diagnostics file.
+ * [A2 UTC SYNC] Phase A1: New diagnostics file.
+ * [A2.1 FIX]: Corrected realpath() include paths from ../../../../ (4 levels) to ../../../ (3 levels).
+ *
  * 检查 PHP、数据库和票据时间是否正确统一到 UTC。
  */
 
 // 1. 加载核心依赖
 // (必须使用相对路径，因为这是独立入口)
 try {
-    require_once realpath(__DIR__ . '/../../../../core/auth_core.php');
-    require_once realpath(__DIR__ . '/../../../../core/config.php'); // $pdo 在此
-    require_once realpath(__DIR__ . '/../../../../app/helpers/auth_helper.php'); // ROLE_* 常量
-    require_once realpath(__DIR__ . '/../../../../app/helpers/datetime_helper.php'); // fmt_local()
+    // [A2.1 FIX] 路径从 /../../../../ (4级) 修正为 /../../../ (3级)
+    require_once realpath(__DIR__ . '/../../../core/auth_core.php');
+    require_once realpath(__DIR__ . '/../../../core/config.php'); // $pdo 在此
+    require_once realpath(__DIR__ . '/../../../app/helpers/auth_helper.php'); // ROLE_* 常量
+    require_once realpath(__DIR__ . '/../../../app/helpers/datetime_helper.php'); // fmt_local()
 } catch (Throwable $e) {
     http_response_code(500);
     die("Failed to load core files: " . $e->getMessage());
@@ -94,6 +97,6 @@ Checking last 3 invoices...
 =======================================
 Self-Check [A1]:
 1. PHP UTC and DB UTC should be almost identical (ms difference).
-2. DB Session Timezone MUST be "+00:00". [cite: 150]
-3. Formatted Local (Madrid) time must match your local time in Madrid. [cite: 151]
-4. Invoice times must show UTC in DB and correct Madrid time when formatted. [cite: 151]
+2. [cite_start]DB Session Timezone MUST be "+00:00". [cite: 150]
+3. [cite_start]Formatted Local (Madrid) time must match your local time in Madrid. [cite: 151]
+4. [cite_start]Invoice times must show UTC in DB and correct Madrid time when formatted. [cite: 151]

@@ -12,6 +12,10 @@
  *
  * [GEMINI DASHBOARD V1.0]
  * - Updated 'dashboard' case to load all necessary data for the new widgets.
+ *
+ * [!! 修复 3.1 !!]
+ * - 修正 `getAllVariantsByMenuItemId` 和 `getAllProductRecipesForSelect` 的 SQL 查询，
+ * 使其包含视图所需的 product_sku 和 name_zh/recipe_name_zh。
  */
 
 declare(strict_types=1);
@@ -127,7 +131,24 @@ if (!function_exists('getMenuItemById')) {
 }
 if (!function_exists('getAllVariantsByMenuItemId')) {
     function getAllVariantsByMenuItemId(PDO $pdo, int $item_id): array {
-        try { $s=$pdo->prepare("SELECT * FROM pos_item_variants WHERE menu_item_id=? AND deleted_at IS NULL ORDER BY sort_order ASC, id ASC"); $s->execute([$item_id]); return $s->fetchAll(PDO::FETCH_ASSOC) ?: []; }
+        try { 
+            // [!! 修复 !!] 原始 SQL: "SELECT * FROM pos_item_variants WHERE menu_item_id=..."
+            $sql = "
+                SELECT 
+                    v.*, 
+                    p.product_code AS product_sku, 
+                    pt.product_name AS recipe_name_zh
+                FROM pos_item_variants v
+                LEFT JOIN pos_menu_items mi ON v.menu_item_id = mi.id
+                LEFT JOIN kds_products p ON mi.product_code = p.product_code AND p.deleted_at IS NULL
+                LEFT JOIN kds_product_translations pt ON p.id = pt.product_id AND pt.language_code = 'zh-CN'
+                WHERE v.menu_item_id = ? AND v.deleted_at IS NULL 
+                ORDER BY v.sort_order ASC, v.id ASC
+            ";
+            $s = $pdo->prepare($sql); 
+            $s->execute([$item_id]); 
+            return $s->fetchAll(PDO::FETCH_ASSOC) ?: []; 
+        }
         catch (Throwable $e) { return []; }
     }
 }
@@ -139,7 +160,20 @@ if (!function_exists('getAllPosCategories')) {
 }
 if (!function_exists('getAllMenuItemsForSelect')) {
     function getAllMenuItemsForSelect(PDO $pdo): array {
-        try { return $pdo->query("SELECT id, item_code, is_active FROM pos_menu_items WHERE deleted_at IS NULL ORDER BY item_code ASC, id ASC")->fetchAll(PDO::FETCH_ASSOC) ?: []; }
+        // [!! 修复 !!] 原始 SQL: "SELECT id, item_code, is_active FROM pos_menu_items ..."
+        try { 
+            $sql = "
+                SELECT 
+                    pmi.id, 
+                    pmi.product_code, /* 修复: 使用 product_code */
+                    pmi.name_zh, /* 修复: 添加 name_zh */
+                    pmi.is_active
+                FROM pos_menu_items pmi
+                WHERE pmi.deleted_at IS NULL 
+                ORDER BY pmi.sort_order ASC, pmi.id ASC
+            ";
+            return $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: []; 
+        }
         catch (Throwable $e) { return []; }
     }
 }
@@ -375,7 +409,21 @@ switch ($page) {
         $variants    = getAllVariantsByMenuItemId($pdo, $item_id);
         if (!function_exists('getAllProductRecipesForSelect')) {
             function getAllProductRecipesForSelect(PDO $pdo): array {
-                try { return $pdo->query("SELECT id, product_code FROM kds_products WHERE deleted_at IS NULL ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC) ?: []; }
+                // [!! 修复 !!] 原始 SQL: "SELECT id, product_code FROM kds_products ..."
+                try { 
+                    $sql = "
+                        SELECT 
+                            p.id, 
+                            p.product_code AS product_sku, 
+                            t_zh.product_name AS name_zh 
+                        FROM kds_products p
+                        LEFT JOIN kds_product_translations t_zh 
+                            ON p.id = t_zh.product_id AND t_zh.language_code = 'zh-CN'
+                        WHERE p.deleted_at IS NULL 
+                        ORDER BY p.product_code ASC
+                    ";
+                    return $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: []; 
+                }
                 catch (Throwable $e) { return []; }
             }
         }
