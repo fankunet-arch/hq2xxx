@@ -2,8 +2,13 @@
 /**
  * Toptea HQ - CPSYS API 注册表 (BMS - POS Management)
  * 注册 POS 菜单、商品、会员、促销等资源
- * Version: 1.3.004 (A2 UTC Precision Fix)
+ * Version: 1.3.005 (UTC MODIFICATION 1.0)
  * Date: 2025-11-11
+ *
+ * [UTC MODIFICATION 1.0 - 2025-11-11]
+ * - 修复 handle_promo_save()。
+ * - JS 提交的 datetime-local (如 '2025-11-20T10:00') 是马德里本地时间。
+ * - 必须将其转换为 UTC 时间字符串后再存入 `timestamp` 字段。
  *
  * [A2.2 UTC FIX]:
  * - 修复了 A2 阶段的严重 Bug：
@@ -635,10 +640,31 @@ function handle_promo_save(PDO $pdo, array $config, array $input_data): void {
         $dup->execute($params);
         if ($dup->fetch()) json_error('此优惠码已被其他活动使用。', 409);
     }
-    // [A2.2 UTC FIX] promo_start/end_date 是 DATETIME, 不是 TIMESTAMP(6)。
-    // 移除 .u
-    $startDate = ($promo_start_date !== '' ? str_replace('T',' ', $promo_start_date) : null);
-    $endDate = ($promo_end_date   !== '' ? str_replace('T',' ', $promo_end_date)   : null);
+
+    // [UTC MODIFICATION START]
+    // 转换来自 datetime-local (马德里时间) 的输入为 UTC 字符串
+    $madrid_tz = new DateTimeZone(APP_DEFAULT_TIMEZONE);
+    $utc_tz = new DateTimeZone('UTC');
+    $format_db = 'Y-m-d H:i:s'; // timestamp(0) 字段
+
+    $startDate = null;
+    if ($promo_start_date !== '') {
+        try {
+            $dt_start = new DateTime(str_replace('T', ' ', $promo_start_date), $madrid_tz);
+            $dt_start->setTimezone($utc_tz);
+            $startDate = $dt_start->format($format_db);
+        } catch (Exception $e) { /* 保持 null */ }
+    }
+    
+    $endDate = null;
+    if ($promo_end_date !== '') {
+         try {
+            $dt_end = new DateTime(str_replace('T', ' ', $promo_end_date), $madrid_tz);
+            $dt_end->setTimezone($utc_tz);
+            $endDate = $dt_end->format($format_db);
+        } catch (Exception $e) { /* 保持 null */ }
+    }
+    // [UTC MODIFICATION END]
     
     $codeValue = ($promo_trigger_type === 'COUPON_CODE' ? $promo_code : null);
     if ($id) {
