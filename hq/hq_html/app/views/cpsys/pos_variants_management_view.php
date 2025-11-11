@@ -32,7 +32,7 @@
                             <tr>
                                 <td><span class="badge text-bg-secondary"><?php echo htmlspecialchars($variant['sort_order']); ?></span></td>
                                 <td><strong><?php echo htmlspecialchars($variant['variant_name_zh']); ?></strong></td>
-                                <td><?php echo htmlspecialchars($variant['product_sku'] . ' - ' . $variant['recipe_name_zh']); ?></td>
+                                <td><?php echo htmlspecialchars(($variant['product_sku'] ?? 'N/A') . ' - ' . ($variant['recipe_name_zh'] ?? 'N/A')); ?></td>
                                 <td><?php echo htmlspecialchars(number_format($variant['price_eur'], 2)); ?></td>
                                 <td>
                                     <?php if ($variant['is_default']): ?>
@@ -79,7 +79,7 @@
                 <select class="form-select" id="product_id" name="product_id" required>
                     <option value="" selected disabled>-- 从配方库选择 --</option>
                     <?php foreach ($recipes as $recipe): ?>
-                        <option value="<?php echo $recipe['id']; ?>"><?php echo htmlspecialchars($recipe['product_sku'] . ' - ' . $recipe['name_zh']); ?></option>
+                        <option value="<?php echo $recipe['id']; ?>"><?php echo htmlspecialchars(($recipe['product_sku'] ?? 'N/A') . ' - ' . ($recipe['name_zh'] ?? 'N/A')); ?></option>
                     <?php endforeach; ?>
                 </select>
                 <div class="form-text">此规格在POS售出后，厨房将按照此配方制作。</div>

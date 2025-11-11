@@ -28,8 +28,3 @@ function hasPermission(int $role_id, string $page): bool {
     }
     return false;
 }
-
-
-
-
-

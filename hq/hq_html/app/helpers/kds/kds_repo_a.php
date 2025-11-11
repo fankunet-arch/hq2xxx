@@ -148,9 +148,10 @@ function getAllStores(PDO $pdo): array {
 }
 
 function getStoreById(PDO $pdo, int $id) {
+    // [!! 修复 !!] 删除了第 151 行不存在的列 (printer_type, printer_ip, printer_port, printer_mac)
+    // SELECT * 已经包含了所有数据库中存在的列 (pr_receipt_type, pr_sticker_type 等)
     $stmt = $pdo->prepare("
-        SELECT *,
-               printer_type, printer_ip, printer_port, printer_mac
+        SELECT *
         FROM kds_stores
         WHERE id = ? AND deleted_at IS NULL
     ");
