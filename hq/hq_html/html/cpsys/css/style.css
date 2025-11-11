@@ -1,0 +1,439 @@
+/**
+ * Toptea HQ - cpsys
+ * Custom Stylesheet
+ * Engineer: Gemini | Date: 2025-11-03 | Revision: 1.2.001 (Dynamic Preview Sizes)
+ */
+
+:root {
+    --brand-color: #ED7762;
+    --bs-dark-rgb: 33, 37, 41;
+    --bs-body-bg: #212529;
+    --sidebar-bg: #1a1d20;
+    --card-bg: #2c3034;
+}
+
+body {
+    background-color: var(--bs-body-bg);
+}
+
+.sidebar {
+    width: 280px;
+    background-color: var(--sidebar-bg);
+    flex-shrink: 0;
+}
+
+.sidebar .nav-link {
+    color: #adb5bd;
+    font-size: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.375rem;
+}
+
+.sidebar .nav-link:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.sidebar .nav-link.active {
+    color: #fff;
+    background-color: var(--brand-color);
+}
+
+.main-content {
+    min-width: 0;
+}
+
+.breadcrumb-item a {
+    text-decoration: none;
+    color: #adb5bd;
+}
+
+.breadcrumb-item a:hover {
+    color: #fff;
+}
+
+.card {
+    background-color: var(--card-bg);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* --- AESTHETIC RECONSTRUCTION based on user feedback --- */
+.card-header {
+    background-color: var(--brand-color); /* Use brand color for headers */
+    border-bottom-color: rgba(0, 0, 0, 0.2);
+    color: white;
+    font-weight: 600;
+}
+
+.btn-primary {
+    --bs-btn-color: #fff;
+    --bs-btn-bg: var(--brand-color);
+    --bs-btn-border-color: var(--brand-color);
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: #e46a54;
+    --bs-btn-hover-border-color: #d76a56;
+    --bs-btn-active-bg: #c9624f;
+    --bs-btn-active-border-color: #c9624f;
+    --bs-btn-focus-shadow-rgb: 237, 119, 98;
+}
+
+.btn-outline-primary {
+    --bs-btn-color: var(--brand-color);
+    --bs-btn-border-color: var(--brand-color);
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: var(--brand-color);
+    --bs-btn-hover-border-color: var(--brand-color);
+}
+
+.btn-outline-info {
+    --bs-btn-color: #0dcaf0;
+    --bs-btn-border-color: #0dcaf0;
+    --bs-btn-hover-color: #000;
+    --bs-btn-hover-bg: #0dcaf0;
+    --bs-btn-hover-border-color: #0dcaf0;
+}
+
+/* Special styles for RMS card headers to match the screenshot */
+#product-list-container,
+#product-editor-container .card-header {
+    background-color: var(--card-bg);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#product-editor-container .card .card-header {
+    background-color: var(--brand-color);
+}
+
+/* The main editor's top bar should not have the brand color */
+#product-editor-container > .card > .card-header {
+     background-color: transparent;
+     border-bottom: none;
+}
+/* --- END OF AESTHETIC RECONSTRUCTION --- */
+
+.card-header .nav-tabs {
+    border-bottom: none;
+    margin-bottom: -1px;
+}
+.card-header .nav-tabs .nav-link {
+    color: rgba(255, 255, 255, 0.7);
+    border: none;
+    background: transparent;
+}
+.card-header .nav-tabs .nav-link:hover {
+    color: #fff;
+}
+.card-header .nav-tabs .nav-link.active {
+    background-color: var(--card-bg);
+    color: var(--brand-color);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom-color: var(--card-bg);
+    font-weight: 600;
+}
+
+.accordion-button:not(.collapsed) {
+    background-color: var(--brand-color);
+    color: white;
+    box-shadow: none;
+}
+.accordion-button:not(.collapsed)::after {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='white'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
+}
+
+.recipe-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto auto;
+    gap: 1rem;
+    align-items: center;
+}
+.recipe-row .form-control, .recipe-row .form-select {
+    min-width: 120px;
+}
+.sortable-ghost {
+    opacity: 0.4;
+    background-color: rgba(237, 119, 98, 0.2);
+    border: 1px dashed var(--brand-color);
+}
+.drag-handle {
+    cursor: grab;
+    color: #6c757d;
+}
+.drag-handle:active {
+    cursor: grabbing;
+}
+select[multiple] {
+    background-color: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    color: var(--bs-body-color);
+    min-height: 120px;
+}
+select[multiple]:focus {
+    border-color: var(--brand-color);
+    box-shadow: 0 0 0 0.25rem rgba(237, 119, 98, 0.25);
+}
+.dynamic-row .form-select.condition-type,
+.dynamic-row .form-select.action-type {
+    max-width: 200px;
+}
+.btn-toggle-nav {
+    padding-left: 1rem;
+}
+.btn-toggle-nav .nav-link {
+    padding: .25rem 1rem;
+    font-size: 0.9rem;
+    color: #adb5bd;
+}
+.btn-toggle-nav .nav-link:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+.btn-toggle-nav .nav-link.active-child {
+    color: #fff;
+    font-weight: 600;
+}
+.form-control, .form-select {
+    background-color: #1a1d20;
+    color: var(--bs-body-color);
+    border-color: rgba(255,255,255,0.1);
+}
+.form-select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23dee2e6' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+}
+.form-control:focus, .form-select:focus {
+    background-color: #1a1d20;
+    color: var(--bs-body-color);
+    border-color: var(--brand-color);
+    box-shadow: 0 0 0 0.25rem rgba(237, 119, 98, 0.25);
+}
+
+/* RMS UI Color Refresh based on feedback A1.png - V2 */
+
+/* 1. Make secondary card headers a lighter gray */
+#product-editor-container .card-body > .card > .card-header {
+    background-color: #374151; /* A medium-dark gray for secondary sections */
+    color: #e5e7eb;
+}
+
+/* 2. Unify the 4 main action buttons in RMS with a distinct blue color */
+#btn-add-product,
+#product-editor-container form button[type="submit"],
+#btn-add-base-recipe-row,
+#btn-add-adjustment-rule {
+    --bs-btn-color: #FFFFFF;
+    --bs-btn-bg: #0d6efd; /* Bootstrap default blue for clear identification */
+    --bs-btn-border-color: #0d6efd;
+    --bs-btn-hover-color: #FFFFFF;
+    --bs-btn-hover-bg: #0b5ed7; /* A darker blue on hover */
+    --bs-btn-hover-border-color: #0a58ca;
+    --bs-btn-active-color: #FFFFFF;
+    --bs-btn-active-bg: #0a58ca;
+    --bs-btn-active-border-color: #0a53be;
+    
+    /* Remove default outline styles if they exist */
+    --bs-btn-focus-shadow-rgb: none; 
+    box-shadow: none;
+
+    /* Apply the styles directly to override existing .btn-* classes */
+    color: var(--bs-btn-color);
+    background-color: var(--bs-btn-bg);
+    border-color: var(--bs-btn-border-color);
+}
+
+/* Override hover/active states as well */
+#btn-add-product:hover,
+#product-editor-container form button[type="submit"]:hover,
+#btn-add-base-recipe-row:hover,
+#btn-add-adjustment-rule:hover {
+    color: var(--bs-btn-hover-color);
+    background-color: var(--bs-btn-hover-bg);
+    border-color: var(--bs-btn-hover-border-color);
+}
+
+#btn-add-product:active,
+#product-editor-container form button[type="submit"]:active,
+#btn-add-base-recipe-row:active,
+#btn-add-adjustment-rule:active {
+    color: var(--bs-btn-active-color);
+    background-color: var(--bs-btn-active-bg);
+    border-color: var(--bs-btn-active-border-color);
+}
+
+
+/* --- START: Visual Template Editor Styles --- */
+.visual-editor-row .card-body {
+    padding: 0.75rem;
+    background-color: #3a3f44; /* Slightly lighter than card-bg for contrast */
+}
+
+.visual-editor-row .drag-handle {
+    cursor: grab;
+    color: #adb5bd;
+    font-size: 1.25rem;
+}
+.visual-editor-row .drag-handle:active {
+    cursor: grabbing;
+}
+
+/* Style for the nested dropzone in "items_loop" */
+.visual-editor-loop-canvas {
+    background-color: #2c3034; /* Match card-bg */
+}
+
+/* Style for the ghost element during drag */
+#visual-editor-canvas .sortable-ghost,
+.visual-editor-loop-canvas .sortable-ghost {
+    opacity: 0.6;
+    background-color: #0d6efd;
+    border: 1px dashed #fff;
+}
+
+/* --- START: Template Preview Pane Styles (V6.1) --- */
+#template-preview-pane {
+    background-color: #3a3f44; /* Match editor row bg */
+    border-radius: 0.25rem;
+    padding: 10px;
+    height: calc(100vh - 300px); /* 限制高度以便滚动 */
+    overflow-y: auto;
+    display: flex; /* Added for centering */
+    align-items: flex-start; /* Align paper to top */
+    justify-content: center; /* Center paper horizontally */
+}
+
+#template-preview-paper {
+    background-color: #ffffff;
+    color: #000000;
+    font-family: 'Courier New', Courier, monospace;
+    padding: 15px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    transition: all 0.3s ease;
+    overflow: hidden; /* Labels should clip */
+}
+
+#template-preview-paper pre {
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+    padding: 0;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: 1.4;
+    color: inherit;
+}
+#template-preview-paper .preview-align-center { text-align: center; }
+#template-preview-paper .preview-align-right { text-align: right; }
+#template-preview-paper .preview-align-left { text-align: left; }
+
+#template-preview-paper .preview-size-wide { font-size: 1.8rem; /* 2x width */ }
+#template-preview-paper .preview-size-high { transform: scaleY(2); transform-origin: top; display: block; }
+#template-preview-paper .preview-size-double { font-size: 1.8rem; transform: scaleY(2); transform-origin: top; display: block; margin-bottom: 0.9rem; }
+
+#template-preview-paper .preview-kv-row {
+    display: flex;
+    justify-content: space-between;
+}
+#template-preview-paper .preview-kv-key { white-space: nowrap; }
+#template-preview-paper .preview-kv-value { text-align: right; word-break: break-all; padding-left: 10px; }
+#template-preview-paper .preview-kv-value.bold { font-weight: 700; }
+
+#template-preview-paper .preview-loop-box {
+    border-top: 1px dashed #999;
+    border-bottom: 1px dashed #999;
+    padding: 10px 0;
+    margin: 5px 0;
+}
+#template-preview-paper .preview-loop-item {
+    padding-left: 10px;
+    border-left: 2px solid #eee;
+    margin-bottom: 5px;
+}
+#template-preview-paper .preview-qr-code {
+    text-align: center;
+    padding: 20px;
+    background-color: #f0f0f0;
+    font-size: 0.8rem;
+    color: #555;
+    border: 1px dashed #ccc;
+    display: block;
+}
+#template-preview-paper .preview-cut {
+    text-align: center;
+    color: #999;
+    font-style: italic;
+    border-top: 1px dashed #999;
+    margin-top: 10px;
+    padding-top: 5px;
+}
+
+/* Dynamic Paper Sizes (using ~4.8px per mm for 80mm, and 5px per mm for labels) */
+.preview-paper-80mm { width: 384px; min-height: 300px; }
+.preview-paper-50x30 { width: 250px; height: 150px; font-size: 0.8rem; line-height: 1.3; }
+.preview-paper-40x30 { width: 200px; height: 150px; font-size: 0.75rem; line-height: 1.3; }
+.preview-paper-58x40 { width: 290px; height: 200px; font-size: 0.9rem; }
+.preview-paper-30x40 { width: 150px; height: 200px; font-size: 0.7rem; line-height: 1.2; }
+.preview-paper-25x40 { width: 125px; height: 200px; font-size: 0.65rem; line-height: 1.2; }
+.preview-paper-60x40 { width: 300px; height: 200px; font-size: 0.9rem; }
+.preview-paper-40x60 { width: 200px; height: 300px; font-size: 0.8rem; }
+.preview-paper-50x40 { width: 250px; height: 200px; font-size: 0.85rem; }
+.preview-paper-50x70 { width: 250px; height: 350px; font-size: 0.85rem; }
+/* --- END: Template Preview Pane Styles --- */
+
+
+/* --- END: Visual Template Editor Styles --- */
+
+/* --- KDS SOP Rule List Beautification (V1.jpg Feedback) --- */
+.table-internal-rule {
+    /* Use a subtle background, less harsh than table-info */
+    --bs-table-bg: #3a3f44;
+    --bs-table-border-color: #4a5054;
+    border-left: 3px solid var(--brand-color) !important; /* Highlight with brand color */
+}
+
+.table-internal-rule td {
+    color: #f8f9fa; /* Ensure text is bright */
+}
+/* --- End of KDS SOP Rule List Beautification --- */
+
+/* --- [GEMINI L3 MENU] START: Styles for 3-Level Menu --- */
+.sidebar .nav-link[data-bs-toggle="collapse"] {
+    position: relative;
+    /* [GEMINI BADGE BUBBLE FIX] Add padding for badge */
+    padding-right: 2.5rem;
+}
+/* L2 Toggle Icon */
+.sidebar .nav-link[data-bs-toggle="collapse"]::after {
+    content: '\f231'; /* bi-caret-right-fill */
+    font-family: 'bootstrap-icons';
+    font-weight: bold;
+    position: absolute;
+    right: 1rem;
+    transition: transform 0.2s ease-in-out;
+}
+/* L2 Toggled-Open Icon */
+.sidebar .nav-link[data-bs-toggle="collapse"]:not(.collapsed)::after {
+    transform: rotate(90deg); /* bi-caret-down-fill */
+}
+/* L2 Active Group Header (when a child L3 is active) */
+.sidebar .nav-link.active-l2-group {
+    color: #fff;
+    background-color: rgba(237, 119, 98, 0.7); /* Muted brand color */
+}
+
+/* L3 Container */
+.l3-nav .nav-link {
+    padding-top: .35rem;
+    padding-bottom: .35rem;
+    padding-left: 1.5rem; /* Further indent L3 links */
+    font-size: 0.9rem;
+    color: #adb5bd;
+}
+.l3-nav .nav-link:hover {
+    color: #fff;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+/* L3 Active Link */
+.l3-nav .nav-link.active {
+    background-color: transparent;
+    color: #fff;
+    font-weight: 600;
+}
+/* --- [GEMINI L3 MENU] END --- */
