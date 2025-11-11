@@ -212,6 +212,10 @@ function handle_kds_rule_save(PDO $pdo, array $config, array $input_data): void 
          json_error('V2 配置必须包含 "template" 和 "mapping"。', 400);
     }
     
+    // [A4 UTC-CORE-MODIFICATION] START
+    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // [A4 UTC-CORE-MODIFICATION] END
+    
     // 3. 准备 SQL 参数
     $params = [
         ':store_id' => $store_id,
@@ -219,21 +223,25 @@ function handle_kds_rule_save(PDO $pdo, array $config, array $input_data): void 
         ':priority' => $priority,
         ':is_active' => $is_active,
         ':extractor_type' => $extractor_type, // 存储 "TEMPLATE_V2"
-        ':config_json' => $config_json_string // 存储 V2 JSON 字符串
+        ':config_json' => $config_json_string, // 存储 V2 JSON 字符串
+        ':now' => $now_utc_str // [A4 UTC-CORE-MODIFICATION]
     ];
 
     if ($id) {
         $params[':id'] = $id;
+        // [A4 UTC-CORE-MODIFICATION]
         $sql = "UPDATE kds_sop_query_rules SET
                     store_id = :store_id, rule_name = :rule_name, priority = :priority,
-                    is_active = :is_active, extractor_type = :extractor_type, config_json = :config_json
+                    is_active = :is_active, extractor_type = :extractor_type, config_json = :config_json,
+                    updated_at = :now
                 WHERE id = :id";
         $message = 'SOP 解析规则已更新。';
     } else {
+        // [A4 UTC-CORE-MODIFICATION]
         $sql = "INSERT INTO kds_sop_query_rules
-                    (store_id, rule_name, priority, is_active, extractor_type, config_json)
+                    (store_id, rule_name, priority, is_active, extractor_type, config_json, created_at, updated_at)
                 VALUES
-                    (:store_id, :rule_name, :priority, :is_active, :extractor_type, :config_json)";
+                    (:store_id, :rule_name, :priority, :is_active, :extractor_type, :config_json, :now, :now)";
         $message = 'SOP 解析规则已创建。';
     }
 

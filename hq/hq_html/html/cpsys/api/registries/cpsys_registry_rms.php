@@ -298,6 +298,10 @@ function cprms_material_get_next_code(PDO $pdo, array $config, array $input_data
 function cprms_stock_actions(PDO $pdo, array $config, array $input_data): void {
     $action = $input_data['action'] ?? $_GET['act'] ?? null;
     $data = $input_data['data'] ?? null;
+    
+    // [A4 UTC-CORE-MODIFICATION] START
+    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    // [A4 UTC-CORE-MODIFICATION] END
 
     if ($action === 'add_warehouse_stock') {
         $material_id = (int)($data['material_id'] ?? 0);
@@ -307,11 +311,16 @@ function cprms_stock_actions(PDO $pdo, array $config, array $input_data): void {
         $final_quantity_to_add = cprms_get_base_quantity($pdo, $material_id, $quantity_to_add, $unit_id);
 
         $pdo->beginTransaction();
-        $sql = "INSERT INTO expsys_warehouse_stock (material_id, quantity)
-                VALUES (:material_id, :quantity)
-                ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)";
+        // [A4 UTC-CORE-MODIFICATION]
+        $sql = "INSERT INTO expsys_warehouse_stock (material_id, quantity, updated_at)
+                VALUES (:material_id, :quantity, :now)
+                ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity), updated_at = :now";
         $stmt = $pdo->prepare($sql);
-        $stmt->execute([':material_id' => $material_id, ':quantity' => $final_quantity_to_add]);
+        $stmt->execute([
+            ':material_id' => $material_id, 
+            ':quantity' => $final_quantity_to_add,
+            ':now' => $now_utc_str
+        ]);
         $pdo->commit();
         json_ok(null, '总仓入库成功！');
     } elseif ($action === 'allocate_to_store') {
@@ -323,15 +332,17 @@ function cprms_stock_actions(PDO $pdo, array $config, array $input_data): void {
         $final_quantity_to_allocate = cprms_get_base_quantity($pdo, $material_id, $quantity_to_allocate, $unit_id);
 
         $pdo->beginTransaction();
-        $stmt_warehouse = $pdo->prepare("INSERT INTO expsys_warehouse_stock (material_id, quantity)
-                                         VALUES (?, ?)
-                                         ON DUPLICATE KEY UPDATE quantity = quantity - ?");
-        $stmt_warehouse->execute([$material_id, -$final_quantity_to_allocate, $final_quantity_to_allocate]);
+        // [A4 UTC-CORE-MODIFICATION]
+        $stmt_warehouse = $pdo->prepare("INSERT INTO expsys_warehouse_stock (material_id, quantity, updated_at)
+                                         VALUES (?, ?, ?)
+                                         ON DUPLICATE KEY UPDATE quantity = quantity - ?, updated_at = ?");
+        $stmt_warehouse->execute([$material_id, -$final_quantity_to_allocate, $now_utc_str, $final_quantity_to_allocate, $now_utc_str]);
 
-        $stmt_store = $pdo->prepare("INSERT INTO expsys_store_stock (store_id, material_id, quantity)
-                                     VALUES (?, ?, ?)
-                                     ON DUPLICATE KEY UPDATE quantity = quantity + ?");
-        $stmt_store->execute([$store_id, $material_id, $final_quantity_to_allocate, $final_quantity_to_allocate]);
+        // [A4 UTC-CORE-MODIFICATION]
+        $stmt_store = $pdo->prepare("INSERT INTO expsys_store_stock (store_id, material_id, quantity, updated_at)
+                                     VALUES (?, ?, ?, ?)
+                                     ON DUPLICATE KEY UPDATE quantity = quantity + ?, updated_at = ?");
+        $stmt_store->execute([$store_id, $material_id, $final_quantity_to_allocate, $now_utc_str, $final_quantity_to_allocate, $now_utc_str]);
         $pdo->commit();
         json_ok(null, '库存调拨成功！');
     } else {
