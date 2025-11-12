@@ -1,39 +1,10 @@
-[10-Nov-2025 23:23:26 Europe/Paris] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'printer_type' in 'field list' in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_a.php:151
-Stack trace:
-#0 /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_a.php(151): PDO->prepare('\n        SELECT...')
-#1 /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/index.php(661): getStoreById(Object(PDO), 1)
-#2 {main}
-  thrown in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_a.php on line 151
-[10-Nov-2025 23:23:49 Europe/Paris] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'printer_type' in 'field list' in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_a.php:151
-Stack trace:
-#0 /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_a.php(151): PDO->prepare('\n        SELECT...')
-#1 /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/index.php(661): getStoreById(Object(PDO), 1)
-#2 {main}
-  thrown in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_a.php on line 151
-[10-Nov-2025 23:23:54 Europe/Paris] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'printer_type' in 'field list' in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_a.php:151
-Stack trace:
-#0 /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_a.php(151): PDO->prepare('\n        SELECT...')
-#1 /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/index.php(661): getStoreById(Object(PDO), 1)
-#2 {main}
-  thrown in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_a.php on line 151
-[10-Nov-2025 23:24:00 Europe/Paris] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'printer_type' in 'field list' in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_a.php:151
-Stack trace:
-#0 /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_a.php(151): PDO->prepare('\n        SELECT...')
-#1 /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/index.php(661): getStoreById(Object(PDO), 1)
-#2 {main}
-  thrown in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_a.php on line 151
-[11-Nov-2025 00:17:40 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:44 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:46 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:47 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:48 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:49 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:49 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:50 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:51 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:51 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:52 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:53 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:53 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:54 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
-[11-Nov-2025 00:19:54 Europe/Paris] PHP Parse error:  syntax error, unexpected identifier " " in /home/mhdlmsk/web_green_toptea/hq/hq_html/app/helpers/kds/kds_repo_c.php on line 12
+[11-Nov-2025 00:56:42 Europe/Paris] PHP Parse error:  Unmatched '}' in /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/api/registries/cpsys_registry_bms.php on line 856
+[11-Nov-2025 00:56:51 Europe/Paris] PHP Parse error:  Unmatched '}' in /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/api/registries/cpsys_registry_bms.php on line 856
+[11-Nov-2025 00:57:04 Europe/Paris] PHP Parse error:  Unmatched '}' in /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/api/registries/cpsys_registry_bms.php on line 856
+[11-Nov-2025 00:57:24 Europe/Paris] PHP Parse error:  Unmatched '}' in /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/api/registries/cpsys_registry_bms.php on line 856
+[11-Nov-2025 01:01:51 Europe/Paris] PHP Parse error:  Unmatched '}' in /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/api/registries/cpsys_registry_bms.php on line 856
+[11-Nov-2025 01:04:35 Europe/Paris] PHP Parse error:  Unmatched '}' in /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/api/registries/cpsys_registry_bms.php on line 856
+[11-Nov-2025 01:05:56 Europe/Paris] PHP Parse error:  Unmatched '}' in /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/api/registries/cpsys_registry_bms.php on line 856
+[11-Nov-2025 01:07:00 Europe/Paris] PHP Parse error:  Unmatched '}' in /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/api/registries/cpsys_registry_bms.php on line 856
+[11-Nov-2025 01:07:12 Europe/Paris] PHP Parse error:  Unmatched '}' in /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/api/registries/cpsys_registry_bms.php on line 856
+[11-Nov-2025 01:13:37 Europe/Paris] PHP Parse error:  Unmatched '}' in /home/mhdlmsk/web_green_toptea/hq/hq_html/html/cpsys/api/registries/cpsys_registry_bms.php on line 856

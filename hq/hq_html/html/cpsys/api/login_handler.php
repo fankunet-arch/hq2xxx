@@ -7,19 +7,9 @@
  * [GEMINI SECURITY FIX V1.0 - 2025-11-10]
  * - Replaced insecure hash('sha256') / hash_equals() with password_verify()
  * - This unifies the auth logic with the Bcrypt hashes stored by user management.
- *
- * [UTC MODIFICATION 1.0 - 2025-11-11]
- * - 引入 datetime_helper.php
- * - 将 last_login_at 的更新从 DB::CURRENT_TIMESTAMP 切换到 App::utc_now()
  */
 session_start();
 require_once realpath(__DIR__ . '/../../../core/config.php');
-
-// [UTC MODIFICATION START]
-// 引入时间助手
-require_once realpath(__DIR__ . '/../../../app/helpers/datetime_helper.php');
-// [UTC MODIFICATION END]
-
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: ../login.php');
@@ -63,12 +53,8 @@ try {
         $_SESSION['role_id'] = $user['role_id'];
         $_SESSION['logged_in'] = true;
         
-        // [UTC MODIFICATION START]
-        // 使用应用层 UTC 时间更新 last_login_at
-        $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-        $update_stmt = $pdo->prepare("UPDATE cpsys_users SET last_login_at = ? WHERE id = ?");
-        $update_stmt->execute([$now_utc_str, $user['id']]);
-        // [UTC MODIFICATION END]
+        $update_stmt = $pdo->prepare("UPDATE cpsys_users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?");
+        $update_stmt->execute([$user['id']]);
         
         header('Location: ../index.php');
         exit;

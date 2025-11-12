@@ -77,7 +77,7 @@ listContainer.append($card);
 * @param {string|null} materialId - 按物料ID过滤，或null加载全部
 */
 function loadProducts(materialId = null) {
-listContainer.html('<div class="col-12 text-center p-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>');
+listContainer.html('<div class="col-12 text-center p-5"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading</span></div></div>');
 
 let url = `${API_GATEWAY_URL}?res=pos_menu_items&act=get_with_materials`;
 if (materialId) {
@@ -114,7 +114,7 @@ const productId = $toggle.data('product-id');
 const newState = $toggle.is(':checked') ? 1 : 0;
 
 $toggle.prop('disabled', true);
-$label.text('保存中...');
+$label.text('保存中');
 
 $.ajax({
 url: `${API_GATEWAY_URL}?res=pos_menu_items&act=toggle_active`,

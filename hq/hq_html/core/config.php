@@ -2,7 +2,7 @@
 /**
  * Toptea HQ - cpsys
  * Core Configuration File (Final Production Version)
- * Engineer: Gemini | Date: 2025-10-29 | Revision: 4.2 (Log Path Fix)
+ * Engineer: Gemini | Date: 2025-10-29 | Revision: 1.2.001 (Log Path Fix)
  *
  * [A1 UTC SYNC]: Added $pdo->exec("SET time_zone='+00:00'")
  */
@@ -22,10 +22,10 @@ error_reporting(E_ALL); // Report all errors
 mb_internal_encoding('UTF-8');
 
 // --- Database Configuration ---
-$db_host = 'mhdlmskvtmwsnt5z.mysql.db';
-$db_name = 'mhdlmskvtmwsnt5z';
-$db_user = 'mhdlmskvtmwsnt5z';
-$db_pass = 'p8PQF7M8ZKLVxtjvatMkrthFQQUB9';
+$db_host = 'mhdlmskv3gjbpqv3.mysql.db';
+$db_name = 'mhdlmskv3gjbpqv3';
+$db_user = 'mhdlmskv3gjbpqv3';
+$db_pass = 'zqVdVfAWYYaa4gTAuHWX7CngpRDqR';
 $db_char = 'utf8mb4';
 
 // --- Application Settings ---
@@ -49,6 +49,12 @@ try {
     $pdo = new PDO($dsn, $db_user, $db_pass, $options);
     
     // [A1 UTC SYNC] 阶段 A1：设置数据库连接时区为 UTC
+    // 
+    // **方案最终确认：**
+    // 必须保留此行。
+    // 1. `DEFAULT (UTC_TIMESTAMP(6))` (用于 created_at) *不* 依赖此设置。
+    // 2. `ON UPDATE CURRENT_TIMESTAMP(6)` (用于 updated_at) *依赖* 此设置。
+    // 此行可确保 "安全网" 的两部分都正确写入 UTC。
     $pdo->exec("SET time_zone='+00:00'");
     
 } catch (\PDOException $e) {

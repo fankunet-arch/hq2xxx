@@ -80,7 +80,7 @@ DB UTC Time (NOW(6)): <?php echo $db_utc_time; ?>
 
 
 --- [A1.3] Sample Data Check (pos_invoices) ---
-Checking last 3 invoices...
+Checking last 3 invoices
 
 <?php if (empty($invoices)): ?>
 (No invoices found or table missing)

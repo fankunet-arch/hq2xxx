@@ -197,5 +197,3 @@ if ($total_files_with_errors > 0) {
 } else {
     echo "\n[ 优秀 ] 未发现语法错误。\n";
 }
-
-?>

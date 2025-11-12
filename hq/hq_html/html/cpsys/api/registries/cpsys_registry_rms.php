@@ -2,29 +2,15 @@
 /**
  * Toptea HQ - CPSYS API 注册表 (RMS - Recipe/Stock Management)
  * 注册物料、库存、配方等资源
- * Version: 1.3.1 (UTC MODIFICATION 1.0)
- * Date: 2025-11-11
- *
- * [UTC MODIFICATION 1.0 - 2025-11-11]
- * - 修复所有 _save 函数 (cprms_material_save, cprms_global_rule_save, cprms_product_save)
- * - 使其不再依赖 DB 端的 CURRENT_TIMESTAMP。
- * - 所有 INSERT/UPDATE 显式使用 utc_now() 设置 created_at 和 updated_at。
- *
- * [A1.01 UTC-CORE-FIX]:
- * - 引入 datetime_helper.php
- * - 修复 cprms_material_delete 和 cprms_product_delete，使其使用 utc_now() (0精度)
+ * Version: 1.2.4 (Fix: Typo, Syntax, Image URL)
+ * Date: 2025-11-07
  *
  * 关键修复：
- * - [V1.1.4] 修复 cprms_product_get_details 中 'sweets_option_id' 的拼写错误。
- * - [V1.1.4] 修复文件末尾多余的 '}' 语法错误。
- * - [V1.1.4] 为顶层 getMaterialById 兜底函数添加 image_url 字段。
- * - [V1.1.4] 为 cprms_material_save 添加 image_url 清理 (parse_url/basename)。
+ * - [V1.2.4] 修复 cprms_product_get_details 中 'sweets_option_id' 的拼写错误。
+ * - [V1.2.4] 修复文件末尾多余的 '}' 语法错误。
+ * - [V1.2.4] 为顶层 getMaterialById 兜底函数添加 image_url 字段。
+ * - [V1.2.4] 为 cprms_material_save 添加 image_url 清理 (parse_url/basename)。
  */
-
-// [A3 UTC-CORE-FIX] 引入时间助手
-if (!function_exists('utc_now')) {
-    require_once realpath(__DIR__ . '/../../../../app/helpers/datetime_helper.php');
-}
 
 /* =========================  仅当缺失时的兜底函数  ========================= */
 if (!function_exists('getMaterialById')) {
@@ -170,10 +156,6 @@ function cprms_material_save(PDO $pdo, array $config, array $input_data): void {
         json_error('选择“大单位”后，其换算率必须是一个大于0的数字。', 400);
     }
 
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    // [UTC MODIFICATION END]
-
     $pdo->beginTransaction();
     try {
         if ($id) {
@@ -181,15 +163,13 @@ function cprms_material_save(PDO $pdo, array $config, array $input_data): void {
             $stmt_check->execute([$code, $id]);
             if ($stmt_check->fetch()) json_error('自定义编号 "' . htmlspecialchars($code) . '" 已被另一个有效物料使用。', 409);
 
-            // [UTC MODIFICATION START]
             $stmt = $pdo->prepare("
                 UPDATE kds_materials SET
                     material_code = ?, material_type = ?, base_unit_id  = ?,
                     medium_unit_id = ?, medium_conversion_rate = ?,
                     large_unit_id  = ?, large_conversion_rate  = ?,
                     expiry_rule_type = ?, expiry_duration = ?,
-                    image_url = ?,
-                    updated_at = ?
+                    image_url = ?
                 WHERE id = ?
             ");
             $stmt->execute([
@@ -198,9 +178,8 @@ function cprms_material_save(PDO $pdo, array $config, array $input_data): void {
                 $large_unit_id,  $large_conversion_rate,
                 $expiry_rule_type, $expiry_duration,
                 $image_url,
-                $now_utc_str, $id
+                $id
             ]);
-            // [UTC MODIFICATION END]
 
             $stmt_trans = $pdo->prepare("UPDATE kds_material_translations SET material_name=? WHERE material_id=? AND language_code=?");
             $stmt_trans->execute([$name_zh, $id, 'zh-CN']);
@@ -219,7 +198,6 @@ function cprms_material_save(PDO $pdo, array $config, array $input_data): void {
 
             if ($reclaim) {
                 $id = (int)$reclaim['id'];
-                // [UTC MODIFICATION START]
                 $stmt = $pdo->prepare("
                     UPDATE kds_materials SET
                         material_type = ?,
@@ -228,8 +206,7 @@ function cprms_material_save(PDO $pdo, array $config, array $input_data): void {
                         large_unit_id  = ?, large_conversion_rate  = ?,
                         expiry_rule_type = ?, expiry_duration = ?,
                         image_url = ?,
-                        deleted_at = NULL,
-                        updated_at = ?
+                        deleted_at = NULL
                     WHERE id = ?
                 ");
                 $stmt->execute([
@@ -238,32 +215,28 @@ function cprms_material_save(PDO $pdo, array $config, array $input_data): void {
                     $large_unit_id,  $large_conversion_rate,
                     $expiry_rule_type, $expiry_duration,
                     $image_url,
-                    $now_utc_str, $id
+                    $id
                 ]);
-                // [UTC MODIFICATION END]
                 $stmt_trans = $pdo->prepare("UPDATE kds_material_translations SET material_name=? WHERE material_id=? AND language_code=?");
                 $stmt_trans->execute([$name_zh, $id, 'zh-CN']);
                 $stmt_trans->execute([$name_es, $id, 'es-ES']);
                 $msg = '已从回收状态恢复该物料。';
             } else {
-                // [UTC MODIFICATION START]
                 $stmt = $pdo->prepare("
                     INSERT INTO kds_materials
                         (material_code, material_type, base_unit_id,
                          medium_unit_id, medium_conversion_rate,
                          large_unit_id,  large_conversion_rate,
-                         expiry_rule_type, expiry_duration, image_url,
-                         created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                         expiry_rule_type, expiry_duration, image_url)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
                 ");
                 $stmt->execute([
                     $code, $type, $base_unit_id,
                     $medium_unit_id, $medium_conversion_rate,
                     $large_unit_id,  $large_conversion_rate,
-                    $expiry_rule_type, $expiry_duration, $image_url,
-                    $now_utc_str, $now_utc_str
+                    $expiry_rule_type, $expiry_duration,
+                    $image_url
                 ]);
-                // [UTC MODIFICATION END]
                 $id = (int)$pdo->lastInsertId();
                 $stmt_trans = $pdo->prepare("INSERT INTO kds_material_translations (material_id, language_code, material_name) VALUES (?,?,?)");
                 $stmt_trans->execute([$id, 'zh-CN', $name_zh]);
@@ -282,10 +255,8 @@ function cprms_material_save(PDO $pdo, array $config, array $input_data): void {
 
 function cprms_material_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A3 UTC-CORE-FIX]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $stmt = $pdo->prepare("UPDATE kds_materials SET deleted_at = ? WHERE id = ?");
-    $stmt->execute([$now_utc_str, (int)$id]);
+    $stmt = $pdo->prepare("UPDATE kds_materials SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?");
+    $stmt->execute([(int)$id]);
     json_ok(null, '物料已成功删除。');
 }
 
@@ -298,10 +269,6 @@ function cprms_material_get_next_code(PDO $pdo, array $config, array $input_data
 function cprms_stock_actions(PDO $pdo, array $config, array $input_data): void {
     $action = $input_data['action'] ?? $_GET['act'] ?? null;
     $data = $input_data['data'] ?? null;
-    
-    // [A4 UTC-CORE-MODIFICATION] START
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    // [A4 UTC-CORE-MODIFICATION] END
 
     if ($action === 'add_warehouse_stock') {
         $material_id = (int)($data['material_id'] ?? 0);
@@ -311,16 +278,11 @@ function cprms_stock_actions(PDO $pdo, array $config, array $input_data): void {
         $final_quantity_to_add = cprms_get_base_quantity($pdo, $material_id, $quantity_to_add, $unit_id);
 
         $pdo->beginTransaction();
-        // [A4 UTC-CORE-MODIFICATION]
-        $sql = "INSERT INTO expsys_warehouse_stock (material_id, quantity, updated_at)
-                VALUES (:material_id, :quantity, :now)
-                ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity), updated_at = :now";
+        $sql = "INSERT INTO expsys_warehouse_stock (material_id, quantity)
+                VALUES (:material_id, :quantity)
+                ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)";
         $stmt = $pdo->prepare($sql);
-        $stmt->execute([
-            ':material_id' => $material_id, 
-            ':quantity' => $final_quantity_to_add,
-            ':now' => $now_utc_str
-        ]);
+        $stmt->execute([':material_id' => $material_id, ':quantity' => $final_quantity_to_add]);
         $pdo->commit();
         json_ok(null, '总仓入库成功！');
     } elseif ($action === 'allocate_to_store') {
@@ -332,17 +294,15 @@ function cprms_stock_actions(PDO $pdo, array $config, array $input_data): void {
         $final_quantity_to_allocate = cprms_get_base_quantity($pdo, $material_id, $quantity_to_allocate, $unit_id);
 
         $pdo->beginTransaction();
-        // [A4 UTC-CORE-MODIFICATION]
-        $stmt_warehouse = $pdo->prepare("INSERT INTO expsys_warehouse_stock (material_id, quantity, updated_at)
-                                         VALUES (?, ?, ?)
-                                         ON DUPLICATE KEY UPDATE quantity = quantity - ?, updated_at = ?");
-        $stmt_warehouse->execute([$material_id, -$final_quantity_to_allocate, $now_utc_str, $final_quantity_to_allocate, $now_utc_str]);
+        $stmt_warehouse = $pdo->prepare("INSERT INTO expsys_warehouse_stock (material_id, quantity)
+                                         VALUES (?, ?)
+                                         ON DUPLICATE KEY UPDATE quantity = quantity - ?");
+        $stmt_warehouse->execute([$material_id, -$final_quantity_to_allocate, $final_quantity_to_allocate]);
 
-        // [A4 UTC-CORE-MODIFICATION]
-        $stmt_store = $pdo->prepare("INSERT INTO expsys_store_stock (store_id, material_id, quantity, updated_at)
-                                     VALUES (?, ?, ?, ?)
-                                     ON DUPLICATE KEY UPDATE quantity = quantity + ?, updated_at = ?");
-        $stmt_store->execute([$store_id, $material_id, $final_quantity_to_allocate, $now_utc_str, $final_quantity_to_allocate, $now_utc_str]);
+        $stmt_store = $pdo->prepare("INSERT INTO expsys_store_stock (store_id, material_id, quantity)
+                                     VALUES (?, ?, ?)
+                                     ON DUPLICATE KEY UPDATE quantity = quantity + ?");
+        $stmt_store->execute([$store_id, $material_id, $final_quantity_to_allocate, $final_quantity_to_allocate]);
         $pdo->commit();
         json_ok(null, '库存调拨成功！');
     } else {
@@ -363,11 +323,6 @@ function cprms_global_rule_save(PDO $pdo, array $config, array $input_data): voi
     $data = $input_data['data'] ?? json_error('缺少 data', 400);
     $id = !empty($data['id']) ? (int)$data['id'] : null;
     $nullIfEmpty = fn($v) => ($v === '' || $v === null) ? null : $v;
-    
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    // [UTC MODIFICATION END]
-
     $params = [
         ':rule_name' => trim($data['rule_name'] ?? ''),
         ':priority' => (int)($data['priority'] ?? 100),
@@ -382,7 +337,6 @@ function cprms_global_rule_save(PDO $pdo, array $config, array $input_data): voi
         ':action_material_id' => (int)($data['action_material_id'] ?? 0),
         ':action_value' => (float)($data['action_value'] ?? 0),
         ':action_unit_id' => $nullIfEmpty($data['action_unit_id']),
-        ':now' => $now_utc_str, // [UTC MODIFICATION]
     ];
     if (empty($params[':rule_name']) || empty($params[':action_type']) || $params[':action_material_id'] === 0)
         json_error('规则名称、动作类型和目标物料为必填项。', 400);
@@ -391,30 +345,23 @@ function cprms_global_rule_save(PDO $pdo, array $config, array $input_data): voi
 
     if ($id) {
         $params[':id'] = $id;
-        // [UTC MODIFICATION START]
         $sql = "UPDATE kds_global_adjustment_rules SET
                     rule_name = :rule_name, priority = :priority, is_active = :is_active,
                     cond_cup_id = :cond_cup_id, cond_ice_id = :cond_ice_id, cond_sweet_id = :cond_sweet_id,
                     cond_material_id = :cond_material_id, cond_base_gt = :cond_base_gt, cond_base_lte = :cond_base_lte,
                     action_type = :action_type, action_material_id = :action_material_id,
-                    action_value = :action_value, action_unit_id = :action_unit_id,
-                    updated_at = :now
+                    action_value = :action_value, action_unit_id = :action_unit_id
                 WHERE id = :id";
-        // [UTC MODIFICATION END]
         $message = '全局规则已更新。';
     } else {
-        // [UTC MODIFICATION START]
         $sql = "INSERT INTO kds_global_adjustment_rules
                     (rule_name, priority, is_active, cond_cup_id, cond_ice_id, cond_sweet_id,
                      cond_material_id, cond_base_gt, cond_base_lte, action_type,
-                     action_material_id, action_value, action_unit_id,
-                     created_at, updated_at)
+                     action_material_id, action_value, action_unit_id)
                 VALUES
                     (:rule_name, :priority, :is_active, :cond_cup_id, :cond_ice_id, :cond_sweet_id,
                      :cond_material_id, :cond_base_gt, :cond_base_lte, :action_type,
-                     :action_material_id, :action_value, :action_unit_id,
-                     :now, :now)";
-        // [UTC MODIFICATION END]
+                     :action_material_id, :action_value, :action_unit_id)";
         $message = '新全局规则已创建。';
     }
     $pdo->prepare($sql)->execute($params);
@@ -516,20 +463,13 @@ function cprms_product_get_next_code(PDO $pdo, array $config, array $input_data)
 
 function cprms_product_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('无效的产品ID。', 400);
-    // [A3 UTC-CORE-FIX]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $stmt = $pdo->prepare("UPDATE kds_products SET is_active=0, deleted_at=? WHERE id=?");
-    $stmt->execute([$now_utc_str, (int)$id]);
+    $stmt = $pdo->prepare("UPDATE kds_products SET is_active=0, deleted_at=NOW() WHERE id=?");
+    $stmt->execute([(int)$id]);
     json_ok(null, '产品已删除。');
 }
 
 function cprms_product_save(PDO $pdo, array $config, array $input_data): void {
     $product = $input_data['product'] ?? json_error('无效的产品数据。', 400);
-    
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    // [UTC MODIFICATION END]
-
     $pdo->beginTransaction();
     try {
         $productId   = isset($product['id']) ? (int)$product['id'] : 0;
@@ -537,18 +477,14 @@ function cprms_product_save(PDO $pdo, array $config, array $input_data): void {
         $statusId    = (int)($product['status_id'] ?? 1);
 
         if ($productId > 0) {
-            // [UTC MODIFICATION START]
-            $stmt = $pdo->prepare("UPDATE kds_products SET product_code=?, status_id=?, updated_at=? WHERE id=?");
-            $stmt->execute([$productCode, $statusId, $now_utc_str, $productId]);
-            // [UTC MODIFICATION END]
+            $stmt = $pdo->prepare("UPDATE kds_products SET product_code=?, status_id=? WHERE id=?");
+            $stmt->execute([$productCode, $statusId, $productId]);
         } else {
             $stmt = $pdo->prepare("SELECT id FROM kds_products WHERE product_code=? AND deleted_at IS NULL");
             $stmt->execute([$productCode]);
             if ($stmt->fetchColumn()) { $pdo->rollBack(); json_error('产品编码已存在：'.$productCode, 409); }
-            // [UTC MODIFICATION START]
-            $stmt = $pdo->prepare("INSERT INTO kds_products (product_code, status_id, is_active, created_at, updated_at) VALUES (?, ?, 1, ?, ?)");
-            $stmt->execute([$productCode, $statusId, $now_utc_str, $now_utc_str]);
-            // [UTC MODIFICATION END]
+            $stmt = $pdo->prepare("INSERT INTO kds_products (product_code, status_id, is_active) VALUES (?, ?, 1)");
+            $stmt->execute([$productCode, $statusId]);
             $productId = (int)$pdo->lastInsertId();
         }
 
@@ -584,9 +520,7 @@ function cprms_product_save(PDO $pdo, array $config, array $input_data): void {
         $base = $product['base_recipes'] ?? [];
         $pdo->prepare("DELETE FROM kds_product_recipes WHERE product_id=?")->execute([$productId]);
         if ($base) {
-            // [UTC MODIFICATION START]
-            $ins = $pdo->prepare("INSERT INTO kds_product_recipes (product_id, material_id, unit_id, quantity, step_category, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-            // [UTC MODIFICATION END]
+            $ins = $pdo->prepare("INSERT INTO kds_product_recipes (product_id, material_id, unit_id, quantity, step_category, sort_order) VALUES (?, ?, ?, ?, ?, ?)");
             $sort = 1;
             foreach ($base as $row) {
                 $ins->execute([
@@ -595,8 +529,7 @@ function cprms_product_save(PDO $pdo, array $config, array $input_data): void {
                     (int)($row['unit_id'] ?? 0),
                     (float)($row['quantity'] ?? 0),
                     (string)($row['step_category'] ?? 'base'),
-                    $sort++,
-                    $now_utc_str, $now_utc_str // [UTC MODIFICATION]
+                    $sort++
                 ]);
             }
         }
@@ -604,9 +537,7 @@ function cprms_product_save(PDO $pdo, array $config, array $input_data): void {
         $adjInput = $product['adjustments'] ?? [];
         $pdo->prepare("DELETE FROM kds_recipe_adjustments WHERE product_id=?")->execute([$productId]);
         if ($adjInput) {
-            // [UTC MODIFICATION START]
-            $ins = $pdo->prepare("INSERT INTO kds_recipe_adjustments (product_id, material_id, unit_id, quantity, step_category, cup_id, sweetness_option_id, ice_option_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            // [UTC MODIFICATION END]
+            $ins = $pdo->prepare("INSERT INTO kds_recipe_adjustments (product_id, material_id, unit_id, quantity, step_category, cup_id, sweetness_option_id, ice_option_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
             foreach ($adjInput as $ov) {
                 $ins->execute([
                     $productId,
@@ -617,7 +548,6 @@ function cprms_product_save(PDO $pdo, array $config, array $input_data): void {
                     isset($ov['cup_id']) ? (int)$ov['cup_id'] : null,
                     isset($ov['sweetness_option_id']) ? (int)$ov['sweetness_option_id'] : null,
                     isset($ov['ice_option_id']) ? (int)$ov['ice_option_id'] : null,
-                    $now_utc_str, $now_utc_str // [UTC MODIFICATION]
                 ]);
             }
         }

@@ -2,26 +2,13 @@
 /**
  * Toptea HQ - 通用 API 核心引擎
  * 职责: 提供 run_api() 函数，驱动基于注册表的 CRUD 操作。
- * Version: 1.0.1 (A3 UTC-CORE-FIX)
- * Date: 2025-11-11
- *
- * [A1.01 UTC-CORE-FIX]:
- * - 引入 datetime_helper.php
- * - 修复标准 'delete' 动作，使其使用 utc_now() 而不是 CURRENT_TIMESTAMP。
- *
- * [A1.02 UTC-CORE-MODIFICATION]:
- * - 修复标准 'save' 动作，使其不再依赖数据库的 CURRENT_TIMESTAMP。
- * - (新增) 自动为 INSERT 添加 created_at 和 updated_at。
- * - (新增) 自动为 UPDATE 添加 updated_at。
+ * Version: 1.0.0
+ * Date: 2025-11-04
  */
 
 // 确保核心助手已被加载
 if (!function_exists('json_error')) {
     require_once realpath(__DIR__ . '/../helpers/http_json_helper.php');
-}
-// [A3 UTC-CORE-FIX] 确保时间助手已被加载
-if (!function_exists('utc_now')) {
-    require_once realpath(__DIR__ . '/../helpers/datetime_helper.php');
 }
 // 确保权限常量已定义
 if (!defined('ROLE_SUPER_ADMIN')) {
@@ -89,10 +76,6 @@ function run_api(array $registry, PDO $pdo): void {
         $pk = $config['pk'] ?? 'id';
         $soft_delete_col = $config['soft_delete_col'] ?? null;
         $base_where = $soft_delete_col ? "{$soft_delete_col} IS NULL" : "1=1";
-        
-        // [A4 UTC-CORE-MODIFICATION]
-        $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-        // [A4 UTC-CORE-MODIFICATION] 结束
 
         switch ($action_name) {
             
@@ -139,11 +122,6 @@ function run_api(array $registry, PDO $pdo): void {
                 
                 if ($id) {
                     // 更新
-                    // [A4 UTC-CORE-MODIFICATION] START
-                    $set_clause[] = "updated_at = :__now_utc";
-                    $params[':__now_utc'] = $now_utc_str;
-                    // [A4 UTC-CORE-MODIFICATION] END
-                    
                     $sql = "UPDATE {$table} SET " . implode(', ', $set_clause) . " WHERE {$pk} = :__pk AND {$base_where}";
                     $params[':__pk'] = $id;
                     $stmt = $pdo->prepare($sql);
@@ -151,12 +129,6 @@ function run_api(array $registry, PDO $pdo): void {
                     $message = '更新成功';
                 } else {
                     // 新增
-                    // [A4 UTC-CORE-MODIFICATION] START
-                    $set_clause[] = "created_at = :__now_utc";
-                    $set_clause[] = "updated_at = :__now_utc";
-                    $params[':__now_utc'] = $now_utc_str;
-                    // [A4 UTC-CORE-MODIFICATION] END
-
                     $sql = "INSERT INTO {$table} SET " . implode(', ', $set_clause);
                     $stmt = $pdo->prepare($sql);
                     $stmt->execute($params);
@@ -183,16 +155,12 @@ function run_api(array $registry, PDO $pdo): void {
 
                 if ($soft_delete_col) {
                     // 软删除
-                    // [A3 UTC-CORE-FIX] 使用 PHP UTC 时间 (0精度)
-                    // [A4 UTC-CORE-MODIFICATION] $now_utc_str 已在顶部定义
-                    // $now_utc_str = utc_now()->format('Y-m-d H:i:s'); 
-                    $stmt = $pdo->prepare("UPDATE {$table} SET {$soft_delete_col} = ? WHERE {$pk} = ?");
-                    $stmt->execute([$now_utc_str, (int)$id]);
+                    $stmt = $pdo->prepare("UPDATE {$table} SET {$soft_delete_col} = CURRENT_TIMESTAMP WHERE {$pk} = ?");
                 } else {
                     // 硬删除
                     $stmt = $pdo->prepare("DELETE FROM {$table} WHERE {$pk} = ?");
-                    $stmt->execute([(int)$id]);
                 }
+                $stmt->execute([(int)$id]);
 
                 // (钩子)
                 if (isset($config['hooks']['after_delete'])) {

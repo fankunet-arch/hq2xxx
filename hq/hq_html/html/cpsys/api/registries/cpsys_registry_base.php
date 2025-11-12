@@ -3,15 +3,7 @@
  * Toptea HQ - CPSYS API 注册表 (Base System)
  * 注册核心系统资源 (用户, 门店, 字典, 打印模板等)
  *
- * Revision: 1.3.1 (UTC MODIFICATION 1.0)
- *
- * [UTC MODIFICATION 1.0 - 2025-11-11]
- * - 修复所有 handle_*_save 函数，使其不再依赖 DB 端的 CURRENT_TIMESTAMP。
- * - 所有 INSERT/UPDATE 显式使用 utc_now() 设置 created_at 和 updated_at。
- *
- * [A3 UTC-CORE-FIX]:
- * - 引入 datetime_helper.php
- * - 修复所有 handle_*_delete 函数，使其使用 utc_now() (0精度) 而不是 CURRENT_TIMESTAMP。
+ * Revision: 1.2.070 (Invoice Prefix & Multi-Printer Refactor)
  *
  * [GEMINI SECURITY FIX V1.0 - 2025-11-10]
  * - Fixed handle_profile_save() to use password_verify() and password_hash(..., PASSWORD_BCRYPT)
@@ -21,9 +13,6 @@
 // 确保助手已加载 (网关会处理，但作为保险)
 require_once realpath(__DIR__ . '/../../../../app/helpers/kds_helper.php');
 require_once realpath(__DIR__ . '/../../../../app/helpers/auth_helper.php');
-// [A3 UTC-CORE-FIX] 引入时间助手
-require_once realpath(__DIR__ . '/../../../../app/helpers/datetime_helper.php');
-
 
 /* ===== Fallback helpers for Units & Next-Code (only if missing) ===== */
 if (!function_exists('getUnitById')) {
@@ -212,10 +201,6 @@ function handle_kds_rule_save(PDO $pdo, array $config, array $input_data): void 
          json_error('V2 配置必须包含 "template" 和 "mapping"。', 400);
     }
     
-    // [A4 UTC-CORE-MODIFICATION] START
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    // [A4 UTC-CORE-MODIFICATION] END
-    
     // 3. 准备 SQL 参数
     $params = [
         ':store_id' => $store_id,
@@ -223,25 +208,21 @@ function handle_kds_rule_save(PDO $pdo, array $config, array $input_data): void 
         ':priority' => $priority,
         ':is_active' => $is_active,
         ':extractor_type' => $extractor_type, // 存储 "TEMPLATE_V2"
-        ':config_json' => $config_json_string, // 存储 V2 JSON 字符串
-        ':now' => $now_utc_str // [A4 UTC-CORE-MODIFICATION]
+        ':config_json' => $config_json_string // 存储 V2 JSON 字符串
     ];
 
     if ($id) {
         $params[':id'] = $id;
-        // [A4 UTC-CORE-MODIFICATION]
         $sql = "UPDATE kds_sop_query_rules SET
                     store_id = :store_id, rule_name = :rule_name, priority = :priority,
-                    is_active = :is_active, extractor_type = :extractor_type, config_json = :config_json,
-                    updated_at = :now
+                    is_active = :is_active, extractor_type = :extractor_type, config_json = :config_json
                 WHERE id = :id";
         $message = 'SOP 解析规则已更新。';
     } else {
-        // [A4 UTC-CORE-MODIFICATION]
         $sql = "INSERT INTO kds_sop_query_rules
-                    (store_id, rule_name, priority, is_active, extractor_type, config_json, created_at, updated_at)
+                    (store_id, rule_name, priority, is_active, extractor_type, config_json)
                 VALUES
-                    (:store_id, :rule_name, :priority, :is_active, :extractor_type, :config_json, :now, :now)";
+                    (:store_id, :rule_name, :priority, :is_active, :extractor_type, :config_json)";
         $message = 'SOP 解析规则已创建。';
     }
 
@@ -300,10 +281,6 @@ function handle_user_save(PDO $pdo, array $config, array $input_data): void {
     $email        = ($email === '') ? null : $email;
     $display_name = ($display_name === '') ? null : $display_name;
 
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    // [UTC MODIFICATION END]
-
     $pdo->beginTransaction();
     try {
         // 唯一性（username）
@@ -318,35 +295,31 @@ function handle_user_save(PDO $pdo, array $config, array $input_data): void {
         }
 
         if ($id > 0) {
-            // [UTC MODIFICATION START]
             // 更新：只有在给了新密码时才更新 password_hash
             if ($new_password !== '') {
                 $hash = password_hash($new_password, PASSWORD_BCRYPT);
                 $sql = "UPDATE cpsys_users
-                           SET username=?, display_name=?, email=?, role_id=?, is_active=?, password_hash=?, updated_at=?
+                           SET username=?, display_name=?, email=?, role_id=?, is_active=?, password_hash=?
                          WHERE id=?";
                 $pdo->prepare($sql)->execute([
-                    $username, $display_name, $email, $role_id, $is_active, $hash, $now_utc_str, $id
+                    $username, $display_name, $email, $role_id, $is_active, $hash, $id
                 ]);
             } else {
                 $sql = "UPDATE cpsys_users
-                           SET username=?, display_name=?, email=?, role_id=?, is_active=?, updated_at=?
+                           SET username=?, display_name=?, email=?, role_id=?, is_active=?
                          WHERE id=?";
                 $pdo->prepare($sql)->execute([
-                    $username, $display_name, $email, $role_id, $is_active, $now_utc_str, $id
+                    $username, $display_name, $email, $role_id, $is_active, $id
                 ]);
             }
-            // [UTC MODIFICATION END]
             $pdo->commit();
             json_ok(['id'=>$id], '用户已更新。');
         } else {
-            // [UTC MODIFICATION START]
             // 新增
             $hash = password_hash($new_password, PASSWORD_BCRYPT);
-            $sql = "INSERT INTO cpsys_users (username, password_hash, email, display_name, is_active, role_id, created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?)";
-            $pdo->prepare($sql)->execute([$username, $hash, $email, $display_name, $is_active, $role_id, $now_utc_str, $now_utc_str]);
-            // [UTC MODIFICATION END]
+            $sql = "INSERT INTO cpsys_users (username, password_hash, email, display_name, is_active, role_id)
+                    VALUES (?,?,?,?,?,?)";
+            $pdo->prepare($sql)->execute([$username, $hash, $email, $display_name, $is_active, $role_id]);
             $newId = (int)$pdo->lastInsertId();
             $pdo->commit();
             json_ok(['id'=>$newId], '用户已创建。');
@@ -359,10 +332,8 @@ function handle_user_save(PDO $pdo, array $config, array $input_data): void {
 
 function handle_user_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A3 UTC-CORE-FIX]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $stmt = $pdo->prepare("UPDATE cpsys_users SET deleted_at = ? WHERE id = ?");
-    $stmt->execute([$now_utc_str, (int)$id]);
+    $stmt = $pdo->prepare("UPDATE cpsys_users SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?");
+    $stmt->execute([(int)$id]);
     json_ok(null, '用户已成功删除。');
 }
 
@@ -430,10 +401,6 @@ function handle_store_save(PDO $pdo, array $config, array $input_data): void {
 
     $is_active = isset($s['is_active']) ? (int)!!$s['is_active'] : 1;
 
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    // [UTC MODIFICATION END]
-
     $pdo->beginTransaction();
     try {
         // 唯一性（store_code）
@@ -459,15 +426,14 @@ function handle_store_save(PDO $pdo, array $config, array $input_data): void {
         }
 
         if ($id > 0) {
-            // [UTC MODIFICATION START]
+            // [MODIFIED 1.3] 更新 UPDATE 语句
             $sql = "UPDATE kds_stores
                        SET store_code=?, store_name=?, invoice_prefix=?, tax_id=?, default_vat_rate=?,
                            store_city=?, store_address=?, store_phone=?, store_cif=?, is_active=?,
                            billing_system=?, eod_cutoff_hour=?, 
                            pr_receipt_type=?, pr_receipt_ip=?, pr_receipt_port=?, pr_receipt_mac=?,
                            pr_sticker_type=?, pr_sticker_ip=?, pr_sticker_port=?, pr_sticker_mac=?,
-                           pr_kds_type=?, pr_kds_ip=?, pr_kds_port=?, pr_kds_mac=?,
-                           updated_at=?
+                           pr_kds_type=?, pr_kds_ip=?, pr_kds_port=?, pr_kds_mac=?
                      WHERE id=?";
             $pdo->prepare($sql)->execute([
                 $store_code, $store_name, $invoice_prefix, $tax_id, $default_vat_rate,
@@ -476,32 +442,28 @@ function handle_store_save(PDO $pdo, array $config, array $input_data): void {
                 $pr_receipt_type, $pr_receipt_ip, $pr_receipt_port, $pr_receipt_mac,
                 $pr_sticker_type, $pr_sticker_ip, $pr_sticker_port, $pr_sticker_mac,
                 $pr_kds_type, $pr_kds_ip, $pr_kds_port, $pr_kds_mac,
-                $now_utc_str, $id
+                $id
             ]);
-            // [UTC MODIFICATION END]
             $pdo->commit();
             json_ok(['id'=>$id], '门店已更新。');
         } else {
-            // [UTC MODIFICATION START]
+            // [MODIFIED 1.3] 更新 INSERT 语句
             $sql = "INSERT INTO kds_stores
                         (store_code, store_name, invoice_prefix, tax_id, default_vat_rate,
                          store_city, store_address, store_phone, store_cif, is_active,
                          billing_system, eod_cutoff_hour, 
                          pr_receipt_type, pr_receipt_ip, pr_receipt_port, pr_receipt_mac,
                          pr_sticker_type, pr_sticker_ip, pr_sticker_port, pr_sticker_mac,
-                         pr_kds_type, pr_kds_ip, pr_kds_port, pr_kds_mac,
-                         created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                         pr_kds_type, pr_kds_ip, pr_kds_port, pr_kds_mac)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
             $pdo->prepare($sql)->execute([
                 $store_code, $store_name, $invoice_prefix, $tax_id, $default_vat_rate,
                 $store_city, $store_addr, $store_phone, $store_cif, $is_active,
                 $billing_system, $eod_cutoff_hour,
                 $pr_receipt_type, $pr_receipt_ip, $pr_receipt_port, $pr_receipt_mac,
                 $pr_sticker_type, $pr_sticker_ip, $pr_sticker_port, $pr_sticker_mac,
-                $pr_kds_type, $pr_kds_ip, $pr_kds_port, $pr_kds_mac,
-                $now_utc_str, $now_utc_str
+                $pr_kds_type, $pr_kds_ip, $pr_kds_port, $pr_kds_mac
             ]);
-            // [UTC MODIFICATION END]
             $newId = (int)$pdo->lastInsertId();
             $pdo->commit();
             json_ok(['id'=>$newId], '门店已创建。');
@@ -523,10 +485,8 @@ function handle_store_save(PDO $pdo, array $config, array $input_data): void {
 
 function handle_store_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A3 UTC-CORE-FIX]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $stmt = $pdo->prepare("UPDATE kds_stores SET deleted_at = ? WHERE id = ?");
-    $stmt->execute([$now_utc_str, (int)$id]);
+    $stmt = $pdo->prepare("UPDATE kds_stores SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?");
+    $stmt->execute([(int)$id]);
     json_ok(null, '门店已成功删除。');
 }
 
@@ -554,21 +514,15 @@ function handle_kds_user_save(PDO $pdo, array $config, array $input_data): void 
         json_error('显示名称为必填项。', 400);
     }
 
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    // [UTC MODIFICATION END]
-
     $pdo->beginTransaction();
     try {
         if ($id > 0) {
-            // [UTC MODIFICATION START]
             // 更新：仅当传了新密码才更新 password_hash
             $params = [
                 ':store_id'     => $store_id,
                 ':id'           => $id,
                 ':display_name' => $display,
                 ':is_active'    => $is_active,
-                ':now'          => $now_utc_str,
             ];
 
             if ($password !== '') {
@@ -577,17 +531,14 @@ function handle_kds_user_save(PDO $pdo, array $config, array $input_data): void 
                 $sql = "UPDATE kds_users
                            SET display_name = :display_name,
                                is_active    = :is_active,
-                               password_hash = :password_hash,
-                               updated_at = :now
+                               password_hash = :password_hash
                          WHERE id = :id AND store_id = :store_id";
             } else {
                 $sql = "UPDATE kds_users
                            SET display_name = :display_name,
-                               is_active    = :is_active,
-                               updated_at = :now
+                               is_active    = :is_active
                          WHERE id = :id AND store_id = :store_id";
             }
-            // [UTC MODIFICATION END]
 
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
@@ -610,7 +561,6 @@ function handle_kds_user_save(PDO $pdo, array $config, array $input_data): void 
                 json_error('用户名 \"' . htmlspecialchars($username) . '\" 在此门店已被使用。', 409);
             }
 
-            // [UTC MODIFICATION START]
             $params = [
                 ':store_id'     => $store_id,
                 ':username'     => $username,
@@ -618,15 +568,13 @@ function handle_kds_user_save(PDO $pdo, array $config, array $input_data): void 
                 ':is_active'    => $is_active,
                 // 与原有实现保持一致：sha256
                 ':password_hash'=> hash('sha256', $password),
-                ':now'          => $now_utc_str,
             ];
 
             $sql = "INSERT INTO kds_users
-                        (store_id, username, display_name, is_active, password_hash, created_at, updated_at)
-                    VALUES (:store_id, :username, :display_name, :is_active, :password_hash, :now, :now)";
+                        (store_id, username, display_name, is_active, password_hash)
+                    VALUES (:store_id, :username, :display_name, :is_active, :password_hash)";
             $stmt = $pdo->prepare($sql);
             $stmt->execute($params);
-            // [UTC MODIFICATION END]
 
             $newId = (int)$pdo->lastInsertId();
             $pdo->commit();
@@ -640,10 +588,8 @@ function handle_kds_user_save(PDO $pdo, array $config, array $input_data): void 
 
 function handle_kds_user_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A3 UTC-CORE-FIX]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $stmt = $pdo->prepare("UPDATE kds_users SET deleted_at = ? WHERE id = ?");
-    $stmt->execute([$now_utc_str, (int)$id]);
+    $stmt = $pdo->prepare("UPDATE kds_users SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?");
+    $stmt->execute([(int)$id]);
     json_ok(null, 'KDS用户已成功删除。');
 }
 
@@ -675,14 +621,7 @@ function handle_profile_save(PDO $pdo, array $config, array $input_data): void {
         }
     }
 
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $params = [
-        ':display_name' => $display_name, 
-        ':email' => $email, 
-        ':id' => $user_id,
-        ':now' => $now_utc_str
-    ];
+    $params = [':display_name' => $display_name, ':email' => $email, ':id' => $user_id];
     $password_sql = "";
     if (!empty($new_password)) {
         // [GEMINI SECURITY FIX V1.0] Store new password using Bcrypt
@@ -690,9 +629,8 @@ function handle_profile_save(PDO $pdo, array $config, array $input_data): void {
         $password_sql = ", password_hash = :password_hash";
     }
 
-    $sql = "UPDATE cpsys_users SET display_name = :display_name, email = :email, updated_at = :now {$password_sql} WHERE id = :id";
+    $sql = "UPDATE cpsys_users SET display_name = :display_name, email = :email {$password_sql} WHERE id = :id";
     $pdo->prepare($sql)->execute($params);
-    // [UTC MODIFICATION END]
 
     // 更新会话
     $_SESSION['display_name'] = $display_name;
@@ -710,31 +648,21 @@ function handle_template_get(PDO $pdo, array $config, array $input_data): void {
 function handle_template_save(PDO $pdo, array $config, array $input_data): void {
     $data = $input_data['data'] ?? json_error('缺少 data', 400);
     $id = $data['id'] ? (int)$data['id'] : null;
-    
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    // [UTC MODIFICATION END]
-
     $params = [
         ':template_name' => trim($data['template_name'] ?? ''),
         ':template_type' => $data['template_type'] ?? null,
         ':physical_size' => $data['physical_size'] ?? null,
         ':template_content' => $data['template_content'] ?? '[]',
         ':is_active' => (int)($data['is_active'] ?? 0),
-        ':store_id' => null, // 暂时只支持全局
-        ':now' => $now_utc_str
+        ':store_id' => null // 暂时只支持全局
     ];
     if (empty($params[':template_name']) || empty($params[':template_type']) || empty($params[':physical_size'])) json_error('模板名称、类型和物理尺寸为必填项。', 400);
     if ($id) {
         $params[':id'] = $id;
-        // [UTC MODIFICATION START]
-        $sql = "UPDATE pos_print_templates SET store_id = :store_id, template_name = :template_name, template_type = :template_type, template_content = :template_content, physical_size = :physical_size, is_active = :is_active, updated_at = :now WHERE id = :id";
-        // [UTC MODIFICATION END]
+        $sql = "UPDATE pos_print_templates SET store_id = :store_id, template_name = :template_name, template_type = :template_type, template_content = :template_content, physical_size = :physical_size, is_active = :is_active WHERE id = :id";
         $message = '模板已成功更新。';
     } else {
-        // [UTC MODIFICATION START]
-        $sql = "INSERT INTO pos_print_templates (store_id, template_name, template_type, template_content, physical_size, is_active, created_at, updated_at) VALUES (:store_id, :template_name, :template_type, :template_content, :physical_size, :is_active, :now, :now)";
-        // [UTC MODIFICATION END]
+        $sql = "INSERT INTO pos_print_templates (store_id, template_name, template_type, template_content, physical_size, is_active) VALUES (:store_id, :template_name, :template_type, :template_content, :physical_size, :is_active)";
         $message = '新模板已成功创建。';
     }
     $pdo->prepare($sql)->execute($params);
@@ -763,33 +691,22 @@ function handle_cup_save(PDO $pdo, array $config, array $input_data): void {
     $params_check = $id ? [$code, $id] : [$code];
     $stmt_check->execute($params_check);
     if ($stmt_check->fetch()) json_error('此编号已被使用。', 409);
-    
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $params = [':code' => $code, ':name' => $name, ':sop_zh' => $sop_zh, ':sop_es' => $sop_es, ':now' => $now_utc_str];
-    // [UTC MODIFICATION END]
-    
+    $params = [':code' => $code, ':name' => $name, ':sop_zh' => $sop_zh, ':sop_es' => $sop_es];
     if ($id) {
         $params[':id'] = $id;
-        // [UTC MODIFICATION START]
-        $sql = "UPDATE kds_cups SET cup_code = :code, cup_name = :name, sop_description_zh = :sop_zh, sop_description_es = :sop_es, updated_at = :now WHERE id = :id";
-        // [UTC MODIFICATION END]
+        $sql = "UPDATE kds_cups SET cup_code = :code, cup_name = :name, sop_description_zh = :sop_zh, sop_description_es = :sop_es WHERE id = :id";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => $id], '杯型已更新。');
     } else {
-        // [UTC MODIFICATION START]
-        $sql = "INSERT INTO kds_cups (cup_code, cup_name, sop_description_zh, sop_description_es, created_at, updated_at) VALUES (:code, :name, :sop_zh, :sop_es, :now, :now)";
-        // [UTC MODIFICATION END]
+        $sql = "INSERT INTO kds_cups (cup_code, cup_name, sop_description_zh, sop_description_es) VALUES (:code, :name, :sop_zh, :sop_es)";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => (int)$pdo->lastInsertId()], '新杯型已创建。');
     }
 }
 function handle_cup_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A3 UTC-CORE-FIX]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $stmt = $pdo->prepare("UPDATE kds_cups SET deleted_at = ? WHERE id = ?");
-    $stmt->execute([$now_utc_str, (int)$id]);
+    $stmt = $pdo->prepare("UPDATE kds_cups SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?");
+    $stmt->execute([(int)$id]);
     json_ok(null, '杯型已删除。');
 }
 
@@ -805,26 +722,17 @@ function handle_ice_save(PDO $pdo, array $config, array $input_data): void {
     $code = trim($data['code'] ?? ''); $name_zh = trim($data['name_zh'] ?? ''); $name_es = trim($data['name_es'] ?? '');
     $sop_zh = trim($data['sop_zh'] ?? ''); $sop_es = trim($data['sop_es'] ?? '');
     if (empty($code) || empty($name_zh) || empty($name_es) || empty($sop_zh) || empty($sop_es)) json_error('编号、双语名称和双语SOP描述均为必填项。', 400);
-    
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    // [UTC MODIFICATION END]
-
     $pdo->beginTransaction();
     if ($id) {
         $stmt_check = $pdo->prepare("SELECT id FROM kds_ice_options WHERE ice_code = ? AND id != ? AND deleted_at IS NULL");
         $stmt_check->execute([$code, $id]);
         if ($stmt_check->fetch()) { $pdo->rollBack(); json_error('此编号已被使用。', 409); }
-        // [UTC MODIFICATION START]
-        $pdo->prepare("UPDATE kds_ice_options SET ice_code = ?, updated_at = ? WHERE id = ?")->execute([$code, $now_utc_str, $id]);
-        // [UTC MODIFICATION END]
+        $pdo->prepare("UPDATE kds_ice_options SET ice_code = ? WHERE id = ?")->execute([$code, $id]);
     } else {
         $stmt_check = $pdo->prepare("SELECT id FROM kds_ice_options WHERE ice_code = ? AND deleted_at IS NULL");
         $stmt_check->execute([$code]);
         if ($stmt_check->fetch()) { $pdo->rollBack(); json_error('此编号已被使用。', 409); }
-        // [UTC MODIFICATION START]
-        $pdo->prepare("INSERT INTO kds_ice_options (ice_code, created_at, updated_at) VALUES (?, ?, ?)")->execute([$code, $now_utc_str, $now_utc_str]);
-        // [UTC MODIFICATION END]
+        $pdo->prepare("INSERT INTO kds_ice_options (ice_code) VALUES (?)")->execute([$code]);
         $id = (int)$pdo->lastInsertId();
     }
     $pdo->prepare("INSERT INTO kds_ice_option_translations (ice_option_id, language_code, ice_option_name, sop_description) VALUES (?, 'zh-CN', ?, ?) ON DUPLICATE KEY UPDATE ice_option_name = VALUES(ice_option_name), sop_description = VALUES(sop_description)")->execute([$id, $name_zh, $sop_zh]);
@@ -834,10 +742,8 @@ function handle_ice_save(PDO $pdo, array $config, array $input_data): void {
 }
 function handle_ice_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A3 UTC-CORE-FIX]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $stmt = $pdo->prepare("UPDATE kds_ice_options SET deleted_at = ? WHERE id = ?");
-    $stmt->execute([$now_utc_str, (int)$id]);
+    $stmt = $pdo->prepare("UPDATE kds_ice_options SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?");
+    $stmt->execute([(int)$id]);
     json_ok(null, '冰量选项已删除。');
 }
 function handle_ice_get_next_code(PDO $pdo, array $config, array $input_data): void {
@@ -857,26 +763,17 @@ function handle_sweetness_save(PDO $pdo, array $config, array $input_data): void
     $code = trim($data['code'] ?? ''); $name_zh = trim($data['name_zh'] ?? ''); $name_es = trim($data['name_es'] ?? '');
     $sop_zh = trim($data['sop_zh'] ?? ''); $sop_es = trim($data['sop_es'] ?? '');
     if (empty($code) || empty($name_zh) || empty($name_es) || empty($sop_zh) || empty($sop_es)) json_error('编号、双语名称和双语SOP描述均为必填项。', 400);
-    
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    // [UTC MODIFICATION END]
-
     $pdo->beginTransaction();
     if ($id) {
         $stmt_check = $pdo->prepare("SELECT id FROM kds_sweetness_options WHERE sweetness_code = ? AND id != ? AND deleted_at IS NULL");
         $stmt_check->execute([$code, $id]);
         if ($stmt_check->fetch()) { $pdo->rollBack(); json_error('此编号已被使用。', 409); }
-        // [UTC MODIFICATION START]
-        $pdo->prepare("UPDATE kds_sweetness_options SET sweetness_code = ?, updated_at = ? WHERE id = ?")->execute([$code, $now_utc_str, $id]);
-        // [UTC MODIFICATION END]
+        $pdo->prepare("UPDATE kds_sweetness_options SET sweetness_code = ? WHERE id = ?")->execute([$code, $id]);
     } else {
         $stmt_check = $pdo->prepare("SELECT id FROM kds_sweetness_options WHERE sweetness_code = ? AND deleted_at IS NULL");
         $stmt_check->execute([$code]);
         if ($stmt_check->fetch()) { $pdo->rollBack(); json_error('此编号已被使用。', 409); }
-        // [UTC MODIFICATION START]
-        $pdo->prepare("INSERT INTO kds_sweetness_options (sweetness_code, created_at, updated_at) VALUES (?, ?, ?)")->execute([$code, $now_utc_str, $now_utc_str]);
-        // [UTC MODIFICATION END]
+        $pdo->prepare("INSERT INTO kds_sweetness_options (sweetness_code) VALUES (?)")->execute([$code]);
         $id = (int)$pdo->lastInsertId();
     }
     $pdo->prepare("INSERT INTO kds_sweetness_option_translations (sweetness_option_id, language_code, sweetness_option_name, sop_description) VALUES (?, 'zh-CN', ?, ?) ON DUPLICATE KEY UPDATE sweetness_option_name = VALUES(sweetness_option_name), sop_description = VALUES(sop_description)")->execute([$id, $name_zh, $sop_zh]);
@@ -886,10 +783,8 @@ function handle_sweetness_save(PDO $pdo, array $config, array $input_data): void
 }
 function handle_sweetness_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A3 UTC-CORE-FIX]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $stmt = $pdo->prepare("UPDATE kds_sweetness_options SET deleted_at = ? WHERE id = ?");
-    $stmt->execute([$now_utc_str, (int)$id]);
+    $stmt = $pdo->prepare("UPDATE kds_sweetness_options SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?");
+    $stmt->execute([(int)$id]);
     json_ok(null, '甜度选项已删除。');
 }
 function handle_sweetness_get_next_code(PDO $pdo, array $config, array $input_data): void {
@@ -908,26 +803,17 @@ function handle_unit_save(PDO $pdo, array $config, array $input_data): void {
     $id = $data['id'] ? (int)$data['id'] : null;
     $code = trim($data['unit_code'] ?? ''); $name_zh = trim($data['name_zh'] ?? ''); $name_es = trim($data['name_es'] ?? '');
     if (empty($code) || empty($name_zh) || empty($name_es)) json_error('编号和双语名称均为必填项。', 400);
-    
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    // [UTC MODIFICATION END]
-
     $pdo->beginTransaction();
     if ($id) {
         $stmt_check = $pdo->prepare("SELECT id FROM kds_units WHERE unit_code = ? AND id != ? AND deleted_at IS NULL");
         $stmt_check->execute([$code, $id]);
         if ($stmt_check->fetch()) { $pdo->rollBack(); json_error('此编号已被使用。', 409); }
-        // [UTC MODIFICATION START]
-        $pdo->prepare("UPDATE kds_units SET unit_code = ?, updated_at = ? WHERE id = ?")->execute([$code, $now_utc_str, $id]);
-        // [UTC MODIFICATION END]
+        $pdo->prepare("UPDATE kds_units SET unit_code = ? WHERE id = ?")->execute([$code, $id]);
     } else {
         $stmt_check = $pdo->prepare("SELECT id FROM kds_units WHERE unit_code = ? AND deleted_at IS NULL");
         $stmt_check->execute([$code]);
         if ($stmt_check->fetch()) { $pdo->rollBack(); json_error('此编号已被使用。', 409); }
-        // [UTC MODIFICATION START]
-        $pdo->prepare("INSERT INTO kds_units (unit_code, created_at, updated_at) VALUES (?, ?, ?)")->execute([$code, $now_utc_str, $now_utc_str]);
-        // [UTC MODIFICATION END]
+        $pdo->prepare("INSERT INTO kds_units (unit_code) VALUES (?)")->execute([$code]);
         $id = (int)$pdo->lastInsertId();
     }
     $pdo->prepare("INSERT INTO kds_unit_translations (unit_id, language_code, unit_name) VALUES (?, 'zh-CN', ?) ON DUPLICATE KEY UPDATE unit_name = VALUES(unit_name)")->execute([$id, $name_zh]);
@@ -937,10 +823,8 @@ function handle_unit_save(PDO $pdo, array $config, array $input_data): void {
 }
 function handle_unit_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A3 UTC-CORE-FIX]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $stmt = $pdo->prepare("UPDATE kds_units SET deleted_at = ? WHERE id = ?");
-    $stmt->execute([$now_utc_str, (int)$id]);
+    $stmt = $pdo->prepare("UPDATE kds_units SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?");
+    $stmt->execute([(int)$id]);
     json_ok(null, '单位已删除。');
 }
 function handle_unit_get_next_code(PDO $pdo, array $config, array $input_data): void {
@@ -966,33 +850,22 @@ function handle_status_save(PDO $pdo, array $config, array $input_data): void {
     $params_check = $id ? [$code, $id] : [$code];
     $stmt_check->execute($params_check);
     if ($stmt_check->fetch()) json_error('此编号已被使用。', 409);
-    
-    // [UTC MODIFICATION START]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $params = [':code' => $code, ':name_zh' => $name_zh, ':name_es' => $name_es, ':now' => $now_utc_str];
-    // [UTC MODIFICATION END]
-
+    $params = [':code' => $code, ':name_zh' => $name_zh, ':name_es' => $name_es];
     if ($id) {
         $params[':id'] = $id;
-        // [UTC MODIFICATION START]
-        $sql = "UPDATE kds_product_statuses SET status_code = :code, status_name_zh = :name_zh, status_name_es = :name_es, updated_at = :now WHERE id = :id";
-        // [UTC MODIFICATION END]
+        $sql = "UPDATE kds_product_statuses SET status_code = :code, status_name_zh = :name_zh, status_name_es = :name_es WHERE id = :id";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => $id], '状态已更新。');
     } else {
-        // [UTC MODIFICATION START]
-        $sql = "INSERT INTO kds_product_statuses (status_code, status_name_zh, status_name_es, created_at, updated_at) VALUES (:code, :name_zh, :name_es, :now, :now)";
-        // [UTC MODIFICATION END]
+        $sql = "INSERT INTO kds_product_statuses (status_code, status_name_zh, status_name_es) VALUES (:code, :name_zh, :name_es)";
         $pdo->prepare($sql)->execute($params);
         json_ok(['id' => (int)$pdo->lastInsertId()], '新状态已创建。');
     }
 }
 function handle_status_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
-    // [A3 UTC-CORE-FIX]
-    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $stmt = $pdo->prepare("UPDATE kds_product_statuses SET deleted_at = ? WHERE id = ?");
-    $stmt->execute([$now_utc_str, (int)$id]);
+    $stmt = $pdo->prepare("UPDATE kds_product_statuses SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?");
+    $stmt->execute([(int)$id]);
     json_ok(null, '状态已删除。');
 }
 // --- END: 缺失的处理器 ---

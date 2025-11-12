@@ -3,6 +3,14 @@
  * Toptea HQ - CPSYS 统一 API 网关
  * Version: 1.5.1 (Fatal Error Path Fix & Syntax Fix)
  * Date: 2025-11-05
+ *
+ * [GEMINI V1.5 FIX]:
+ * - Corrected critical path error for loading config.php.
+ * - Path was ../../../../ (WRONG)
+ * - Path is now ../../../ (CORRECT)
+ *
+ * [GEMINI V1.5.1 FIX]:
+ * - Removed stray '}' at the end of the file which caused a 500 Fatal Syntax Error.
  */
 
 // 1. 加载核心配置 (提供 $pdo 和 APP_PATH)
