@@ -85,3 +85,96 @@ if (!function_exists('getNextAvailableCustomCode')) {
         return (string)$n;
     }
 }
+// --- RMS: Global Adjustment Rules (Layer 2) ---
+// Minimal fallback: return all rules for RMS Global Rules page
+if (!function_exists('getAllGlobalRules')) {
+    /**
+     * Fetch all global adjustment rules.
+     * Expected by /html/cpsys/index.php when page=rms_global_rules
+     * Columns consumed by the view:
+     *  id, rule_name, priority, is_active,
+     *  cond_cup_id, cond_ice_id, cond_sweet_id, cond_material_id,
+     *  cond_base_gt, cond_base_lte,
+     *  action_type, action_value, action_unit_id, action_material_id
+     */
+    function getAllGlobalRules(PDO $pdo): array {
+        try {
+            $sql = "SELECT
+                        id,
+                        rule_name,
+                        priority,
+                        is_active,
+                        cond_cup_id,
+                        cond_ice_id,
+                        cond_sweet_id,
+                        cond_material_id,
+                        cond_base_gt,
+                        cond_base_lte,
+                        action_type,
+                        action_value,
+                        action_unit_id,
+                        action_material_id
+                    FROM kds_global_adjustment_rules
+                    ORDER BY is_active DESC, priority ASC, id ASC";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+            foreach ($rows as &$r) {
+                foreach (['id','priority','is_active','cond_cup_id','cond_ice_id','cond_sweet_id','cond_material_id','action_unit_id','action_material_id'] as $k) {
+                    if (isset($r[$k]) && $r[$k] !== null) $r[$k] = (int)$r[$k];
+                }
+                foreach (['cond_base_gt','cond_base_lte','action_value'] as $k) {
+                    if (isset($r[$k]) && $r[$k] !== null) $r[$k] = (float)$r[$k];
+                }
+            }
+            unset($r);
+
+            return $rows;
+        } catch (PDOException $e) {
+            if ($e->getCode() === '42S02') {
+                // 表不存在：页面将显示“暂无规则”，不致命
+                error_log('Notice: kds_global_adjustment_rules not found: '.$e->getMessage());
+                return [];
+            }
+            throw $e;
+        }
+    }
+}
+
+// --- RMS: Base Products (L1) ---
+if (!function_exists('getAllBaseProducts')) {
+    /**
+     * Return minimal fields used by rms_product_management_view:
+     *  id, product_code, name_zh
+     */
+    function getAllBaseProducts(PDO $pdo): array {
+        try {
+            $sql = "SELECT
+                        p.id,
+                        p.product_code,
+                        tzh.product_name AS name_zh
+                    FROM kds_products p
+                    LEFT JOIN kds_product_translations tzh
+                        ON tzh.product_id = p.id AND tzh.language_code = 'zh-CN'
+                    WHERE p.deleted_at IS NULL
+                    ORDER BY p.product_code ASC, p.id ASC";
+            $stmt = $pdo->query($sql);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            foreach ($rows as &$r) {
+                if (isset($r['id'])) $r['id'] = (int)$r['id'];
+                if (!isset($r['name_zh'])) $r['name_zh'] = '';
+                if (!isset($r['product_code'])) $r['product_code'] = '';
+            }
+            unset($r);
+            return $rows;
+        } catch (PDOException $e) {
+            if ($e->getCode() === '42S02') {
+                // 缺表时返回空集，避免致命
+                error_log('Notice: kds_products or kds_product_translations not found: '.$e->getMessage());
+                return [];
+            }
+            throw $e;
+        }
+    }
+}
