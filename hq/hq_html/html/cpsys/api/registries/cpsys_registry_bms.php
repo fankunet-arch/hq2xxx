@@ -15,6 +15,10 @@
  *
  * [A2 UTC SYNC]:
  * - 引入 datetime_helper.php (utc_now())
+ *
+ * [R2.1] Added: pos_tags resource and handlers (handle_pos_tag_*)
+ * [R2.2] Updated: handle_addon_get/save to include tag maps
+ * [R2.4] Added: topup_orders resource and handler (handle_topup_order_review)
  */
 
 require_once realpath(__DIR__ . '/../../../../app/helpers/kds_helper.php');
@@ -71,6 +75,12 @@ function handle_menu_item_get(PDO $pdo, array $config, array $input_data): void 
     $stmt = $pdo->prepare("SELECT * FROM pos_menu_items WHERE id = ? AND deleted_at IS NULL");
     $stmt->execute([(int)$id]);
     $data = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    // [R2.2] 获取关联的 tags
+    if ($data) {
+        $data['tag_ids'] = getProductTagIds($pdo, (int)$id);
+    }
+    
     $data ? json_ok($data) : json_error('未找到商品', 404);
 }
 function handle_menu_item_save(PDO $pdo, array $config, array $input_data): void {
@@ -86,15 +96,43 @@ function handle_menu_item_save(PDO $pdo, array $config, array $input_data): void
         ':is_active' => (int)($data['is_active'] ?? 0)
     ];
     if (empty($params[':name_zh']) || empty($params[':name_es']) || empty($params[':pos_category_id'])) json_error('双语名称和POS分类均为必填项。', 400);
-    if ($id) {
-        $params[':id'] = $id;
-        $sql = "UPDATE pos_menu_items SET name_zh = :name_zh, name_es = :name_es, pos_category_id = :pos_category_id, description_zh = :description_zh, description_es = :description_es, sort_order = :sort_order, is_active = :is_active WHERE id = :id";
-        $pdo->prepare($sql)->execute($params);
-        json_ok(['id' => $id], '商品信息已成功更新！');
-    } else {
-        $sql = "INSERT INTO pos_menu_items (name_zh, name_es, pos_category_id, description_zh, description_es, sort_order, is_active) VALUES (:name_zh, :name_es, :pos_category_id, :description_zh, :description_es, :sort_order, :is_active)";
-        $pdo->prepare($sql)->execute($params);
-        json_ok(['id' => (int)$pdo->lastInsertId()], '新商品已成功创建！');
+    
+    // [R2.2] 标签
+    $tag_ids = $data['tag_ids'] ?? [];
+    
+    $pdo->beginTransaction();
+    try {
+        if ($id) {
+            $params[':id'] = $id;
+            $sql = "UPDATE pos_menu_items SET name_zh = :name_zh, name_es = :name_es, pos_category_id = :pos_category_id, description_zh = :description_zh, description_es = :description_es, sort_order = :sort_order, is_active = :is_active WHERE id = :id";
+            $pdo->prepare($sql)->execute($params);
+        } else {
+            $sql = "INSERT INTO pos_menu_items (name_zh, name_es, pos_category_id, description_zh, description_es, sort_order, is_active) VALUES (:name_zh, :name_es, :pos_category_id, :description_zh, :description_es, :sort_order, :is_active)";
+            $pdo->prepare($sql)->execute($params);
+            $id = (int)$pdo->lastInsertId();
+        }
+
+        // [R2.2] START: 更新 Tag 关联
+        $stmt_del_tags = $pdo->prepare("DELETE FROM pos_product_tag_map WHERE product_id = ?");
+        $stmt_del_tags->execute([$id]);
+
+        if (!empty($tag_ids)) {
+            $sql_ins_tags = "INSERT INTO pos_product_tag_map (product_id, tag_id) VALUES (?, ?)";
+            $stmt_ins_tags = $pdo->prepare($sql_ins_tags);
+            foreach ($tag_ids as $tag_id) {
+                if (filter_var($tag_id, FILTER_VALIDATE_INT)) {
+                    $stmt_ins_tags->execute([$id, (int)$tag_id]);
+                }
+            }
+        }
+        // [R2.2] END: 更新 Tag 关联
+        
+        $pdo->commit();
+        json_ok(['id' => $id], $id ? '商品信息已成功更新！' : '新商品已成功创建！');
+        
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        json_error('保存商品时出错。', 500, ['debug' => $e->getMessage()]);
     }
 }
 function handle_menu_item_delete(PDO $pdo, array $config, array $input_data): void {
@@ -110,6 +148,11 @@ function handle_menu_item_delete(PDO $pdo, array $config, array $input_data): vo
     $stmt_variants->execute([$now_utc_str, $id]);
     $stmt_item = $pdo->prepare("UPDATE pos_menu_items SET deleted_at = ? WHERE id = ?");
     $stmt_item->execute([$now_utc_str, $id]);
+    
+    // [R2.2] 删除关联 (虽然 FK 已设置 CASCADE，但显式执行更安全)
+    $stmt_tags = $pdo->prepare("DELETE FROM pos_product_tag_map WHERE product_id = ?");
+    $stmt_tags->execute([$id]);
+
     $pdo->commit();
     json_ok(null, '商品及其所有规格已成功删除。');
 }
@@ -379,6 +422,12 @@ function handle_addon_get(PDO $pdo, array $config, array $input_data): void {
     $stmt = $pdo->prepare("SELECT * FROM pos_addons WHERE id = ? AND deleted_at IS NULL");
     $stmt->execute([(int)$id]);
     $data = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    // [R2.2] 获取关联的 tags
+    if ($data) {
+        $data['tag_ids'] = getAddonTagIds($pdo, (int)$id);
+    }
+    
     $data ? json_ok($data) : json_error('未找到加料', 404);
 }
 function handle_addon_save(PDO $pdo, array $config, array $input_data): void {
@@ -394,20 +443,51 @@ function handle_addon_save(PDO $pdo, array $config, array $input_data): void {
         ':is_active' => (int)($data['is_active'] ?? 0)
     ];
     if (empty($params[':addon_code']) || empty($params[':name_zh']) || empty($params[':name_es'])) json_error('编码和双语名称均为必填项。', 400);
+    
+    // [R2.2] 标签
+    $tag_ids = $data['tag_ids'] ?? [];
+    
+    // 检查 code 唯一性
     $sql_check = "SELECT id FROM pos_addons WHERE addon_code = ? AND deleted_at IS NULL" . ($id ? " AND id != ?" : "");
     $params_check = $id ? [$params[':addon_code'], $id] : [$params[':addon_code']];
     $stmt_check = $pdo->prepare($sql_check);
     $stmt_check->execute($params_check);
     if ($stmt_check->fetch()) json_error('此编码 (KEY)已被使用。', 409);
-    if ($id) {
-        $params[':id'] = $id;
-        $sql = "UPDATE pos_addons SET addon_code = :addon_code, name_zh = :name_zh, name_es = :name_es, price_eur = :price_eur, material_id = :material_id, sort_order = :sort_order, is_active = :is_active WHERE id = :id";
-        $pdo->prepare($sql)->execute($params);
-        json_ok(['id' => $id], '加料已成功更新！');
-    } else {
-        $sql = "INSERT INTO pos_addons (addon_code, name_zh, name_es, price_eur, material_id, sort_order, is_active) VALUES (:addon_code, :name_zh, :name_es, :price_eur, :material_id, :sort_order, :is_active)";
-        $pdo->prepare($sql)->execute($params);
-        json_ok(['id' => (int)$pdo->lastInsertId()], '新加料已成功创建！');
+    
+    $pdo->beginTransaction();
+    try {
+        if ($id) {
+            $params[':id'] = $id;
+            $sql = "UPDATE pos_addons SET addon_code = :addon_code, name_zh = :name_zh, name_es = :name_es, price_eur = :price_eur, material_id = :material_id, sort_order = :sort_order, is_active = :is_active WHERE id = :id";
+            $pdo->prepare($sql)->execute($params);
+        } else {
+            $sql = "INSERT INTO pos_addons (addon_code, name_zh, name_es, price_eur, material_id, sort_order, is_active) VALUES (:addon_code, :name_zh, :name_es, :price_eur, :material_id, :sort_order, :is_active)";
+            $pdo->prepare($sql)->execute($params);
+            $id = (int)$pdo->lastInsertId();
+        }
+
+        // [R2.2] START: 更新 Tag 关联
+        $stmt_del_tags = $pdo->prepare("DELETE FROM pos_addon_tag_map WHERE addon_id = ?");
+        $stmt_del_tags->execute([$id]);
+
+        if (!empty($tag_ids)) {
+            $sql_ins_tags = "INSERT INTO pos_addon_tag_map (addon_id, tag_id) VALUES (?, ?)";
+            $stmt_ins_tags = $pdo->prepare($sql_ins_tags);
+            foreach ($tag_ids as $tag_id) {
+                // 确保 tag_id 是有效的整数
+                if (filter_var($tag_id, FILTER_VALIDATE_INT)) {
+                    $stmt_ins_tags->execute([$id, (int)$tag_id]);
+                }
+            }
+        }
+        // [R2.2] END: 更新 Tag 关联
+
+        $pdo->commit();
+        json_ok(['id' => $id], $id ? '加料已成功更新！' : '新加料已成功创建！');
+
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        json_error('保存加料时出错。', 500, ['debug' => $e->getMessage()]);
     }
 }
 function handle_addon_delete(PDO $pdo, array $config, array $input_data): void {
@@ -415,10 +495,133 @@ function handle_addon_delete(PDO $pdo, array $config, array $input_data): void {
     // [A2.2 UTC FIX] 
     // pos_addons.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
     $now_utc_str = utc_now()->format('Y-m-d H:i:s');
-    $stmt = $pdo->prepare("UPDATE pos_addons SET deleted_at = ? WHERE id = ?");
-    $stmt->execute([$now_utc_str, (int)$id]);
-    json_ok(null, '加料已成功删除。');
+
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare("UPDATE pos_addons SET deleted_at = ? WHERE id = ?");
+        $stmt->execute([$now_utc_str, (int)$id]);
+        
+        // [R2.2] 删除关联 (虽然 FK 已设置 CASCADE，但显式执行更安全)
+        $stmt_tags = $pdo->prepare("DELETE FROM pos_addon_tag_map WHERE addon_id = ?");
+        $stmt_tags->execute([(int)$id]);
+        
+        $pdo->commit();
+        json_ok(null, '加料已成功删除。');
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        json_error('删除加料时出错。', 500, ['debug' => $e->getMessage()]);
+    }
 }
+
+// --- [R2.1] START: 处理器: POS 标签 (pos_tags) ---
+function handle_pos_tag_get(PDO $pdo, array $config, array $input_data): void {
+    $id = $_GET['id'] ?? json_error('缺少 id', 400);
+    $data = getTagById($pdo, (int)$id);
+    $data ? json_ok($data) : json_error('未找到标签', 404);
+}
+function handle_pos_tag_save(PDO $pdo, array $config, array $input_data): void {
+    $data = $input_data['data'] ?? json_error('缺少 data', 400);
+    $id = $data['id'] ? (int)$data['id'] : null;
+    $code = trim($data['tag_code'] ?? '');
+    $name = trim($data['tag_name'] ?? '');
+    
+    if (empty($code) || empty($name)) json_error('标签编码和名称均为必填项。', 400);
+    
+    // 检查 code 唯一性
+    $sql_check = "SELECT tag_id FROM pos_tags WHERE tag_code = ?" . ($id ? " AND tag_id != ?" : "");
+    $params_check = $id ? [$code, $id] : [$code];
+    $stmt_check = $pdo->prepare($sql_check);
+    $stmt_check->execute($params_check);
+    if ($stmt_check->fetch()) json_error('标签编码 "' . htmlspecialchars($code) . '" 已被使用。', 409);
+
+    if ($id) {
+        $stmt = $pdo->prepare("UPDATE pos_tags SET tag_code = ?, tag_name = ? WHERE tag_id = ?");
+        $stmt->execute([$code, $name, $id]);
+        json_ok(['id' => $id], '标签已成功更新！');
+    } else {
+        $stmt = $pdo->prepare("INSERT INTO pos_tags (tag_code, tag_name) VALUES (?, ?)");
+        $stmt->execute([$code, $name]);
+        json_ok(['id' => (int)$pdo->lastInsertId()], '新标签已成功创建！');
+    }
+}
+function handle_pos_tag_delete(PDO $pdo, array $config, array $input_data): void {
+    $id = $input_data['id'] ?? json_error('缺少 id', 400);
+    // 硬删除 (Hard Delete)，因为此表没有 deleted_at
+    // [R2.2] 增加事务，确保 map 表也被删除 (虽然 FK 已设置 CASCADE)
+    $pdo->beginTransaction();
+    try {
+        $stmt_map = $pdo->prepare("DELETE FROM pos_addon_tag_map WHERE tag_id = ?");
+        $stmt_map->execute([(int)$id]);
+        
+        $stmt_map_prod = $pdo->prepare("DELETE FROM pos_product_tag_map WHERE tag_id = ?");
+        $stmt_map_prod->execute([(int)$id]);
+        
+        $stmt = $pdo->prepare("DELETE FROM pos_tags WHERE tag_id = ?");
+        $stmt->execute([(int)$id]);
+        
+        $pdo->commit();
+        json_ok(null, '标签已成功删除。');
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        // 检查是否为 FK 约束失败
+        if ($e instanceof PDOException && $e->errorInfo[1] == 1451) {
+             json_error('删除失败：此标签可能仍被其他系统组件使用 (例如：次卡方案)，请先解除关联。', 409);
+        }
+        json_error('删除标签时出错。', 500, ['debug' => $e->getMessage()]);
+    }
+}
+// --- [R2.1] END: 处理器: POS 标签 (pos_tags) ---
+
+
+// --- [R2.4] START: 处理器: 售卡订单 (topup_orders) ---
+function handle_topup_order_review(PDO $pdo, array $config, array $input_data): void {
+    $order_id = (int)($input_data['order_id'] ?? 0);
+    $action = trim($input_data['action'] ?? '');
+    $reviewer_id = (int)($_SESSION['user_id'] ?? 0);
+
+    if ($order_id <= 0 || !in_array($action, ['APPROVE', 'REJECT']) || $reviewer_id <= 0) {
+        json_error('无效的请求参数 (order_id, action) 或未登录。', 400);
+    }
+    
+    // A2 UTC: 确保所有时间戳使用 0 精度 (Y-m-d H:i:s)
+    // topup_orders.reviewed_at 和 member_passes.activated_at/expires_at 均为 timestamp(0)
+    $now_utc_str = utc_now()->format('Y-m-d H:i:s');
+    
+    $pdo->beginTransaction();
+    try {
+        if ($action === 'APPROVE') {
+            // 调用辅助函数激活次卡
+            $result = activate_member_pass($pdo, $order_id, $reviewer_id, $now_utc_str);
+            if ($result !== true) {
+                $pdo->rollBack();
+                json_error($result, 409); // 409 Conflict (e.g., already processed)
+            }
+        } else {
+            // 仅拒绝
+            $stmt_check = $pdo->prepare("SELECT status FROM topup_orders WHERE order_id = ? FOR UPDATE");
+            $stmt_check->execute([$order_id]);
+            $status = $stmt_check->fetchColumn();
+
+            if ($status !== 'PENDING') {
+                 $pdo->rollBack();
+                 json_error("订单状态不是 PENDING，无法拒绝。", 409);
+            }
+
+            $sql = "UPDATE topup_orders SET status = 'REJECTED', reviewed_by_user_id = ?, reviewed_at = ? WHERE order_id = ?";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([$reviewer_id, $now_utc_str, $order_id]);
+        }
+
+        $pdo->commit();
+        json_ok(null, '订单 (ID: ' . $order_id . ') 已成功处理为: ' . $action);
+
+    } catch (Exception $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        json_error('审核订单时发生严重错误。', 500, ['debug' => $e->getMessage()]);
+    }
+}
+// --- [R2.4] END: 处理器: 售卡订单 (topup_orders) ---
+
 
 // --- 处理器: 会员等级 (pos_member_levels) ---
 function handle_member_level_get(PDO $pdo, array $config, array $input_data): void {
@@ -831,6 +1034,27 @@ return [
         'table' => 'pos_addons', 'pk' => 'id', 'soft_delete_col' => 'deleted_at', 'auth_role' => ROLE_SUPER_ADMIN,
         'custom_actions' => [ 'get' => 'handle_addon_get', 'save' => 'handle_addon_save', 'delete' => 'handle_addon_delete', ],
     ],
+    
+    // --- [R2.1] START: 注册 pos_tags ---
+    'pos_tags' => [
+        'table' => 'pos_tags', 'pk' => 'tag_id', 'soft_delete_col' => null, 'auth_role' => ROLE_SUPER_ADMIN,
+        'custom_actions' => [
+            'get' => 'handle_pos_tag_get',
+            'save' => 'handle_pos_tag_save',
+            'delete' => 'handle_pos_tag_delete',
+        ],
+    ],
+    // --- [R2.1] END ---
+    
+    // --- [R2.4] START: 注册 topup_orders ---
+    'topup_orders' => [
+        'table' => 'topup_orders', 'pk' => 'order_id', 'soft_delete_col' => 'deleted_at', 'auth_role' => ROLE_SUPER_ADMIN,
+        'custom_actions' => [
+            'review' => 'handle_topup_order_review',
+        ],
+    ],
+    // --- [R2.4] END ---
+    
     'pos_member_levels' => [
         'table' => 'pos_member_levels', 'pk' => 'id', 'soft_delete_col' => null, 'auth_role' => ROLE_SUPER_ADMIN,
         'custom_actions' => [ 'get' => 'handle_member_level_get', 'save' => 'handle_member_level_save', 'delete' => 'handle_member_level_delete', ],

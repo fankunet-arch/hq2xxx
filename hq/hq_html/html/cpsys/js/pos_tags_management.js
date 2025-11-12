@@ -1,39 +1,32 @@
 /**
- * TopTea HQ - JavaScript for POS Menu Item Management
- * [R2.3] Added POS Tag whitelist selection
+ * TopTea HQ - JavaScript for POS Tag Management (Seasons Pass Whitelist)
+ * Engineer: Gemini | Date: 2025-11-12
+ * [R2.1] Implements: 3.1 CPSYS-RMS (R2)
  */
 $(document).ready(function() {
 
     const API_GATEWAY_URL = 'api/cpsys_api_gateway.php';
-    const API_RES = 'pos_menu_items';
+    const API_RES = 'pos_tags';
 
     const dataDrawer = new bootstrap.Offcanvas(document.getElementById('data-drawer'));
     const form = $('#data-form');
     const drawerLabel = $('#drawer-label');
     const dataIdInput = $('#data-id');
-    
-    // [R2.3] Tag selection
-    const tagSelect = $('#tag_ids');
-
-    function resetForm() {
-        drawerLabel.text('创建新商品');
-        form[0].reset();
-        dataIdInput.val('');
-        // [R2.3] Reset tag selection
-        tagSelect.val([]);
-        $('#sort_order').val(99);
-        $('#is_active').prop('checked', true);
-    }
+    const codeInput = $('#tag_code');
 
     $('#create-btn').on('click', function() {
-        resetForm();
+        drawerLabel.text('创建新标签');
+        form[0].reset();
+        dataIdInput.val('');
+        codeInput.prop('readonly', false);
     });
 
     $('.table').on('click', '.edit-btn', function() {
-        resetForm();
-        drawerLabel.text('编辑商品');
         const dataId = $(this).data('id');
+        drawerLabel.text('编辑标签');
+        form[0].reset();
         dataIdInput.val(dataId);
+        codeInput.prop('readonly', true); // Prevent changing the key
 
         $.ajax({
             url: API_GATEWAY_URL,
@@ -46,18 +39,9 @@ $(document).ready(function() {
             dataType: 'json',
             success: function(response) {
                 if (response.status === 'success') {
-                    const data = response.data;
-                    $('#pos_category_id').val(data.pos_category_id);
-                    $('#name_zh').val(data.name_zh);
-                    $('#name_es').val(data.name_es);
-                    $('#description_zh').val(data.description_zh);
-                    $('#description_es').val(data.description_es);
-                    $('#sort_order').val(data.sort_order);
-                    $('#is_active').prop('checked', data.is_active == 1);
-                    
-                    // [R2.3] Populate tags
-                    tagSelect.val(data.tag_ids || []);
-                    
+                    const tag = response.data;
+                    codeInput.val(tag.tag_code);
+                    $('#tag_name').val(tag.tag_name);
                 } else {
                     alert('获取数据失败: ' + response.message);
                     dataDrawer.hide();
@@ -72,21 +56,11 @@ $(document).ready(function() {
 
     form.on('submit', function(e) {
         e.preventDefault();
-        
         const formData = {
             id: dataIdInput.val(),
-            pos_category_id: $('#pos_category_id').val(),
-            name_zh: $('#name_zh').val(),
-            name_es: $('#name_es').val(),
-            description_zh: $('#description_zh').val(),
-            description_es: $('#description_es').val(),
-            sort_order: $('#sort_order').val(),
-            is_active: $('#is_active').is(':checked') ? 1 : 0,
-            
-            // [R2.3] Send tag_ids array
-            tag_ids: tagSelect.val()
+            tag_code: codeInput.val(),
+            tag_name: $('#tag_name').val()
         };
-
         $.ajax({
             url: API_GATEWAY_URL,
             type: 'POST',
@@ -117,8 +91,7 @@ $(document).ready(function() {
     $('.table').on('click', '.delete-btn', function() {
         const dataId = $(this).data('id');
         const dataName = $(this).data('name');
-        
-        if (confirm(`您确定要删除商品 "${dataName}" 吗？\n警告：这将同时删除其关联的所有规格和标签。`)) {
+        if (confirm(`您确定要删除标签 "${dataName}" 吗？\n警告：如果标签正在被商品使用，删除可能会失败或导致关联失效。`)) {
             $.ajax({
                 url: API_GATEWAY_URL,
                 type: 'POST',
