@@ -79,7 +79,7 @@
                 <select class="form-select" id="product_id" name="product_id" required>
                     <option value="" selected disabled>-- 从配方库选择 --</option>
                     <?php foreach ($recipes as $recipe): ?>
-                        <option value="<?php echo $recipe['id']; ?>"><?php echo htmlspecialchars(($recipe['product_sku'] ?? 'N/A') . ' - ' . ($recipe['name_zh'] ?? 'N/A')); ?></option>
+                        <option value="<?php echo $recipe['id']; ?>"><?php echo htmlspecialchars(($recipe['product_code'] ?? 'N/A') . ' - ' . ($recipe['name_zh'] ?? 'N/A')); ?></option>
                     <?php endforeach; ?>
                 </select>
                 <div class="form-text">此规格在POS售出后，厨房将按照此配方制作。</div>

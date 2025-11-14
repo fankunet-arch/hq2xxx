@@ -10,6 +10,9 @@
  *
  * [PHASE 5] (V3.6.0) Add new invoice numbering and KDS variables
  * Date: 2025-11-08
+ *
+ * [P4-PASS] (V3.7.0) Added Season Pass redemption variables
+ * Date: 2025-11-12
  */
 
 // Helper to format and display JSON
@@ -252,6 +255,36 @@ $default_templates['EXPIRY_LABEL'] = $default_templates['EXPIRY_LABEL'] ?? '[
 
     <div class="col-lg-6 mb-4">
         <div class="card h-100">
+            <div class="card-header bg-success text-white">
+                次卡核销小票 (PASS_REDEMPTION_SLIP)
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    用于 `PASS_REDEMPTION_SLIP` 类型的模板。
+                    <br>在次卡核销 (且无额外加价) 时打印。
+                </p>
+                <table class="table table-sm table-bordered">
+                    <thead><tr><th>变量</th><th>说明 (来自计划P4)</th></tr></thead>
+                    <tbody>
+                        <tr><td><code>{pass_card_last4}</code></td><td>会员卡号末四位</td></tr>
+                        <tr><td><code>{redeemed_uses_total}</code></td><td>本次核销总次数 (杯数)</td></tr>
+                        <tr><td><code>{extra_charge_total}</code></td><td>额外加价总额 (通常为 0.00)</td></tr>
+                        <tr><td><code>{remaining_uses}</code></td><td>次卡剩余次数</td></tr>
+                        <tr><td><code>{redeemed_at_local}</code></td><td>核销时间 (本地时区)</td></tr>
+                        <tr><td colspan="2"><hr class="my-1"></td></tr>
+                        <tr><td><code>{store_name}</code></td><td>(共享) 门店名称</td></tr>
+                        <tr><td><code>{cashier_name}</code></td><td>(共享) 收银员姓名</td></tr>
+                        <tr><td><code>{pickup_number}</code></td><td>(共享) 取餐号</td></tr>
+                        <tr><td><code>{item_name_zh}</code></td><td>(共享) 商品名称 (循环内)</td></tr>
+                        <tr><td><code>{item_name_es}</code></td><td>(共享) 商品名称 (循环内)</td></tr>
+                        <tr><td><code>{item_customizations}</code></td><td>(共享) 商品自定义 (循环内)</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
             <div class="card-header bg-warning text-dark">
                 杯贴标签 (CUP_STICKER) 变量
             </div>
@@ -320,6 +353,25 @@ $default_templates['EXPIRY_LABEL'] = $default_templates['EXPIRY_LABEL'] ?? '[
         render_json_template('默认厨房出品单 (KITCHEN_ORDER)', $default_templates['KITCHEN_ORDER'] ?? '');
         render_json_template('默认日结报告 (EOD_REPORT)', $default_templates['EOD_REPORT'] ?? '');
         render_json_template('默认效期标签 (EXPIRY_LABEL)', $default_templates['EXPIRY_LABEL'] ?? '');
+
+        // [P4 新增] START: 次卡核销小票 (PASS_REDEMPTION_SLIP)
+        $default_templates['PASS_REDEMPTION_SLIP'] = $default_templates['PASS_REDEMPTION_SLIP'] ?? '[
+            {"type": "text", "value": "--- Recibo de Canje (No Fiscal) ---", "align": "center", "size": "normal"},
+            {"type": "kv", "key": "Tienda", "value": "{store_name}"},
+            {"type": "kv", "key": "Nº Pedido", "value": "{pickup_number}"},
+            {"type": "kv", "key": "Fecha", "value": "{redeemed_at_local}"},
+            {"type": "kv", "key": "Cajero", "value": "{cashier_name}"},
+            {"type": "divider", "char": "-"},
+            {"type": "kv", "key": "Tarjeta (Pase)", "value": "******{pass_card_last4}"},
+            {"type": "kv", "key": "Usos Canjeados", "value": "{redeemed_uses_total}"},
+            {"type": "kv", "key": "Cargos Adicionales", "value": "{extra_charge_total} €"},
+            {"type": "divider", "char": "="},
+            {"type": "text", "value": "Usos Restantes: {remaining_uses}", "align": "left", "size": "double"},
+            {"type": "feed", "lines": 3},
+            {"type": "cut"}
+        ]';
+        render_json_template('默认次卡核销小票 (PASS_REDEMPTION_SLIP)', $default_templates['PASS_REDEMPTION_SLIP'] ?? '');
+        // [P4 新增] END
         ?>
     </div>
 </div>

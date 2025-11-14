@@ -243,6 +243,7 @@ $systemPages = [
                 <?php endif; ?>
             </ul>
         </nav>
+        
         <div class="main-content flex-grow-1 p-4">
             <header class="d-flex justify-content-between align-items-center mb-4">
                 <nav aria-label="breadcrumb">
@@ -287,6 +288,7 @@ $systemPages = [
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     
     <?php if (isset($page_js) && $page_js): ?>

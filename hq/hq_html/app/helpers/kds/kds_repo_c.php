@@ -1,6 +1,13 @@
 <?php
 /**
  * KDS Repo C - Dicts + Ops (Phase 2 consolidation)
+ * V7 (2025-11-13):
+ * - [R2/B1] Added getTopupOrderById() for auditing.
+ * V6 (2025-11-13):
+ * - [R2] Added getPosMenuItemById() for auditing.
+ * V5 (2025-11-13):
+ * - [R2] Added getPosCategoryById() for auditing.
+ * - [R2] Added getPosAddonById() for auditing.
  * V4 (2025-11-12):
  * - [GEMINI FIX] 修复 getAllCups() SQL (不再 join 不存在的 translations 表, 直接从 kds_cups 读取)
  * - [GEMINI FIX] 修复 getAllIceOptions() 函数名 (移除 "Active")
@@ -236,6 +243,63 @@ if (!function_exists('getMenuItemById')) {
         $stmt = $pdo->prepare($sql);
         $stmt->execute([$menu_item_id]);
         return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+}
+
+// [R2] 新增: 审计 `pos_categories` 所需的 getter
+if (!function_exists('getPosCategoryById')) {
+    function getPosCategoryById(PDO $pdo, int $id): ?array {
+        $sql = "SELECT * FROM pos_categories WHERE id = ? AND deleted_at IS NULL";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$id]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+}
+
+// [R2] 新增: 审计 `pos_addons` 所需的 getter
+if (!function_exists('getPosAddonById')) {
+    function getPosAddonById(PDO $pdo, int $id): ?array {
+        $sql = "
+            SELECT 
+                a.*,
+                mt.material_name AS material_name_zh
+            FROM pos_addons a
+            LEFT JOIN kds_materials m ON a.material_id = m.id
+            LEFT JOIN kds_material_translations mt ON m.id = mt.material_id AND mt.language_code = 'zh-CN'
+            WHERE a.id = ? AND a.deleted_at IS NULL
+        ";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$id]);
+        $data = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($data) {
+            // 确保快照包含标签
+            $data['tag_ids'] = getAddonTagIds($pdo, $id);
+        }
+        return $data ?: null;
+    }
+}
+
+// [R2] 新增: 审计 `pos_menu_items` 所需的 getter
+if (!function_exists('getPosMenuItemById')) {
+    function getPosMenuItemById(PDO $pdo, int $id): ?array {
+        $sql = "
+            SELECT 
+                mi.*,
+                pc.name_zh AS category_name_zh
+            FROM pos_menu_items mi
+            LEFT JOIN pos_categories pc ON mi.pos_category_id = pc.id
+            WHERE mi.id = ? AND mi.deleted_at IS NULL
+        ";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$id]);
+        $data = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($data) {
+            // 确保快照包含标签
+            $data['tag_ids'] = getProductTagIds($pdo, $id);
+        }
+        return $data ?: null;
     }
 }
 // ================== [ 错误修复 END ] ==================
@@ -516,6 +580,16 @@ if (!function_exists('activate_member_pass')) {
             error_log("[activate_member_pass] " . $e->getMessage());
             return $e->getMessage();
         }
+    }
+}
+
+// [R2/B1] 新增: 审计 `topup_orders` 所需的 getter
+if (!function_exists('getTopupOrderById')) {
+    function getTopupOrderById(PDO $pdo, int $id): ?array {
+        $sql = "SELECT * FROM topup_orders WHERE topup_order_id = ?";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$id]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
 }
 

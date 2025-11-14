@@ -2,9 +2,13 @@
 /**
  * Toptea HQ - POS 加料项管理
  * [R2.2] Added POS Tag whitelist selection
+ * [GEMINI REFACTOR 2025-11-14] Added Global Settings button and drawer
  */
 ?>
-<div class="d-flex justify-content-end mb-3">
+<div class="d-flex justify-content-end gap-2 mb-3">
+    <button class="btn btn-outline-info" id="global-settings-btn" data-bs-toggle="offcanvas" data-bs-target="#global-settings-drawer" title="全局加料设置">
+        <i class="bi bi-gear"></i> 全局设置
+    </button>
     <button class="btn btn-primary" id="create-btn" data-bs-toggle="offcanvas" data-bs-target="#data-drawer">
         <i class="bi bi-plus-circle me-2"></i>创建新加料
     </button>
@@ -137,5 +141,38 @@
                 <button type="submit" class="btn btn-primary">保存</button>
             </div>
         </form>
+    </div>
+</div>
+
+<div class="offcanvas offcanvas-end" tabindex="-1" id="global-settings-drawer" aria-labelledby="global-settings-drawer-label">
+    <div class="offcanvas-header">
+        <h5 class="offcanvas-title" id="global-settings-drawer-label">全局加料设置</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body">
+        <form id="global-settings-form">
+            <div class="card">
+                <div class="card-header">
+                    免费加料规则
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="global_free_addon_limit" class="form-label">免费加料上限 (每杯)</label>
+                        <input type="number" step="1" min="0" class="form-control" id="global_free_addon_limit" name="global_free_addon_limit" required>
+                        <div class="form-text">
+                            定义 <strong>所有订单</strong> (包括普通订单和次卡核销) 中，每杯饮品最多可享受的免费加料(free_addon)份数。
+                            <br>
+                            输入 `0` 表示不限制。
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="d-flex justify-content-end mt-4">
+                <button type="button" class="btn btn-secondary me-2" data-bs-dismiss="offcanvas">取消</button>
+                <button type="submit" class="btn btn-primary">保存全局设置</button>
+            </div>
+        </form>
+        <div id="global-settings-feedback" class="mt-3"></div>
     </div>
 </div>

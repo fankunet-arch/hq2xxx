@@ -2,6 +2,10 @@
 /**
  * Toptea HQ - POS Member Settings View
  * Engineer: Gemini | Date: 2025-10-28
+ *
+ * [GEMINI REFACTOR 2025-11-14]:
+ * - Removed Global Addon Settings card. This setting was moved
+ * to pos_addon_management_view.php
  */
 ?>
 <div class="row justify-content-center">
@@ -23,18 +27,6 @@
                     </div>
                 </div>
             </div>
-
-            <!-- Placeholder for future settings -->
-            <!--
-            <div class="card mb-4">
-                <div class="card-header">
-                    积分兑换设置 (待开发)
-                </div>
-                <div class="card-body">
-                     <p class="text-muted">积分兑换优惠券等功能将在此配置。</p>
-                </div>
-            </div>
-            -->
 
             <div class="d-flex justify-content-end mt-4">
                 <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>保存设置</button>

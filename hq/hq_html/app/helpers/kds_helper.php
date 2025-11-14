@@ -1,6 +1,8 @@
 <?php
 // [A1 UTC SYNC] 引入新的时间助手
 require_once __DIR__ . '/datetime_helper.php';
+// [R2] 引入新的审计助手
+require_once __DIR__ . '/audit_helper.php';
 
 require_once __DIR__ . '/kds/kds_repo_a.php';
 require_once __DIR__ . '/kds/kds_repo_b.php';

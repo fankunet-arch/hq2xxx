@@ -10,6 +10,9 @@
  * 4. (Previous) Widened Offcanvas to 90vw and refactored to a 3-column layout (3, 5, 4).
  * 5. (Previous) Improved helper text for K/V components.
  * 6. (Previous) Added new div#template-preview-paper for dynamic size switching.
+ *
+ * [P4-PASS] (V6.3.0) Added PASS_REDEMPTION_SLIP option
+ * Date: 2025-11-12
  */
 
 // Helper function to get a readable name for template types
@@ -20,7 +23,8 @@ function get_template_type_name($type) {
         'KITCHEN_ORDER' => '厨房出品单',
         'SHIFT_REPORT' => '交接班报告',
         'CUP_STICKER' => '杯贴标签',
-        'EXPIRY_LABEL' => '效期标签'
+        'EXPIRY_LABEL' => '效期标签',
+        'PASS_REDEMPTION_SLIP' => '次卡核销小票' // [P4 新增]
     ];
     return $map[$type] ?? $type;
 }
@@ -73,6 +77,7 @@ $physical_sizes = [
                                         $badge_class = 'text-bg-info';
                                         if ($template['template_type'] === 'CUP_STICKER') $badge_class = 'text-bg-warning';
                                         if ($template['template_type'] === 'EXPIRY_LABEL') $badge_class = 'text-bg-primary';
+                                        if ($template['template_type'] === 'PASS_REDEMPTION_SLIP') $badge_class = 'text-bg-success'; // [P4 新增]
                                     ?>
                                     <span class="badge <?php echo $badge_class; ?>"><?php echo htmlspecialchars($type_name); ?></span>
                                 </td>
@@ -128,7 +133,7 @@ $physical_sizes = [
                         <option value="RECEIPT">顾客小票</option>
                         <option value="KITCHEN_ORDER">厨房出品单</option>
                         <option value="CUP_STICKER">杯贴标签</option>
-                        <option value="EXPIRY_LABEL">效期标签</option>
+                        <option value="PASS_REDEMPTION_SLIP">次卡核销小票</option> <option value="EXPIRY_LABEL">效期标签</option>
                         <option value="EOD_REPORT">日结报告 (Z-Out)</option>
                         <option value="SHIFT_REPORT">交接班报告</option>
                     </select>
