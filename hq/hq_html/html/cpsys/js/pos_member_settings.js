@@ -1,7 +1,11 @@
 /**
  * Toptea HQ - JavaScript for POS Member Settings Page
  * Engineer: Gemini | Date: 2025-10-28
- * Revision: 1.0.001 (API Gateway Refactor)
+ * Revision: 1.3.0 (Global Addon Limit Refactor - REMOVED)
+ *
+ * [GEMINI REFACTOR 2025-11-14]:
+ * - Removed "global_free_addon_limit" logic.
+ * This setting was moved to pos_addon_management.js
  */
 $(document).ready(function() {
 
@@ -11,6 +15,9 @@ $(document).ready(function() {
     const form = $('#member-settings-form');
     const feedbackDiv = $('#settings-feedback');
     const eurosPerPointInput = $('#euros_per_point');
+    
+    // [GEMINI REFACTOR] 移除 globalFreeAddonLimitInput
+
 
     // Function to load settings
     function loadSettings() {
@@ -27,8 +34,11 @@ $(document).ready(function() {
             // --- END MOD ---
             success: function(response) {
                 if (response.status === 'success') {
-                    const valueFromServer = response.data?.points_euros_per_point;
-                    eurosPerPointInput.val(valueFromServer || '1.00'); 
+                    // [GEMINI REFACTOR] 修改
+                    const settings = response.data || {};
+                    eurosPerPointInput.val(settings.points_euros_per_point || '1.00'); 
+                    // [GEMINI REFACTOR] 移除 globalFreeAddonLimitInput.val()
+                    
                     feedbackDiv.empty();
                 } else {
                     feedbackDiv.html(`<div class="alert alert-danger">加载设置失败: ${response.message || '未知错误'}</div>`);
@@ -49,8 +59,10 @@ $(document).ready(function() {
         const submitButton = $(this).find('button[type="submit"]');
         submitButton.prop('disabled', true);
 
+        // [GEMINI REFACTOR] 修改
         const settingsData = {
             points_euros_per_point: eurosPerPointInput.val()
+            // [GEMINI REFACTOR] 移除 global_free_addon_limit
         };
 
         $.ajax({

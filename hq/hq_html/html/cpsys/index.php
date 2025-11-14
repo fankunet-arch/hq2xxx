@@ -8,15 +8,14 @@
  *
  * [!! 修复 3.1 !!]:
  * - 修复了 kds_sop_rules 和 pos_variants_management 页面中
- * 因 `getAllVariantsByMenuItemId` 函数缺失导致的致命错误。
- * (该函数仅用于旧版回退，现已从 kds_helper.php 中移除)
+ *   因 `getAllVariantsByMenuItemId` 函数缺失导致的致命错误。
+ *   (该函数仅用于旧版回退，现已从 kds_helper.php 中移除)
  * - 临时在 index.php 中补充了此函数的简化版 (fallback) 以防止崩溃。
  * - 补充了 `getKdsProductById` 的 fallback (用于 pos_variants_management)。
  *
  * [!! 修复 3.2 !!]:
  * - 修复了 `getAllVariantsByMenuItemId` fallback 中的 'product_sku' 键名错误。
- * (此错误记录于 php_errors_hq3.log)
- * - 键名应为 'product_code' (来自 mi.product_code)。
+ *   键名应为 'product_code' (来自 mi.product_code)。
  *
  * [R2-Final] Integrated Seasons Pass (BMS/RMS) routes and data loading:
  * - Added cases: pos_tag_management, pos_seasons_pass_dashboard, pos_topup_orders, pos_redemptions_view
@@ -24,6 +23,11 @@
  *
  * [R-Final FIX] Removed fatal error call to non-existent function check_login().
  * The require_once 'auth_core.php' already performs the check.
+ *
+ * [Fix 4.0 JS Bridge]
+ * - 新增：在渲染前把 $js_files (array) 映射为旧版 main.php 能识别的 $page_js (string)，
+ *   以恢复页面 JS 的加载（编辑弹窗回填等逻辑）。
+ * - 规则：忽略 http(s) CDN，仅取首个本地相对路径脚本；自动去掉开头斜杠与 "js/" 前缀。
  */
 
 // --- 1. 核心引导 ---
@@ -35,11 +39,9 @@ require_once realpath(__DIR__ . '/../../app/helpers/kds_helper.php');
 // [A2.1 UTC SYNC] 引入时间助手
 require_once realpath(__DIR__ . '/../../app/helpers/datetime_helper.php');
 
-
 // --- 2. 身份验证 ---
 // [R-Final FIX] 移除 check_login();
-// 包含 'auth_core.php' (第 16 行) 已自动执行检查。
-
+// 包含 'auth_core.php' 已自动执行检查。
 
 // -----------------------------------------------------------------
 // [!! 修复 3.1 !!] START: 临时 Fallback 函数
@@ -64,24 +66,29 @@ if (!function_exists('getAllVariantsByMenuItemId')) {
      * Fallback for getAllVariantsByMenuItemId
      * (Required by kds_sop_rules_view.php and pos_variants_management_view.php)
      *
-     * [!! 修复 3.2 !!]
-     * 修复了 'product_sku' 键名错误 -> 'product_code'
-     * [!! 修复 3.3 !!] (来自 index.php 修复 3.1)
-     * 补全了 getAllVariantsByMenuItemId 缺失的 'recipe_name_zh' 字段
+     * [!! 修复 3.2 !!] 修正别名说明
+     * [Fix 4.0] 兜底：product_sku = COALESCE(p.product_code, mi.product_code)
+     *            recipe_name_zh = COALESCE(pt_zh.product_name, pt_es.product_name)
      */
     function getAllVariantsByMenuItemId(PDO $pdo, int $menu_item_id): array {
         $sql = "
             SELECT 
-                v.*, 
-                mi.product_code, 
-                p.id AS product_id,
-                p.product_code AS product_sku,  /* [!! 修复 3.2 !!] 别名 */
-                pt.product_name AS recipe_name_zh /* [!! 修复 3.3 !!] 关联翻译 */
+                v.*,
+                mi.product_code AS product_code,
+                COALESCE(p.product_code, mi.product_code) AS product_sku,
+                COALESCE(pt_zh.product_name, pt_es.product_name) AS recipe_name_zh
             FROM pos_item_variants v
-            INNER JOIN pos_menu_items mi ON v.menu_item_id = mi.id
-            LEFT JOIN kds_products p ON mi.product_code = p.product_code AND p.deleted_at IS NULL
-            LEFT JOIN kds_product_translations pt ON p.id = pt.product_id AND pt.language_code = 'zh-CN'
-            WHERE v.menu_item_id = ? AND v.deleted_at IS NULL
+            INNER JOIN pos_menu_items mi
+                ON v.menu_item_id = mi.id
+            LEFT JOIN kds_products p
+                ON p.product_code = mi.product_code
+               AND p.deleted_at IS NULL
+            LEFT JOIN kds_product_translations pt_zh
+                ON pt_zh.product_id = p.id AND pt_zh.language_code = 'zh-CN'
+            LEFT JOIN kds_product_translations pt_es
+                ON pt_es.product_id = p.id AND pt_es.language_code = 'es-ES'
+            WHERE v.menu_item_id = ?
+              AND v.deleted_at IS NULL
             ORDER BY v.sort_order ASC
         ";
         $stmt = $pdo->prepare($sql);
@@ -93,7 +100,6 @@ if (!function_exists('getAllVariantsByMenuItemId')) {
 // [!! 修复 3.1 !!] END: 临时 Fallback 函数
 // -----------------------------------------------------------------
 
-
 // --- 3. 数据库连接 ---
 try {
     // [A2.1 UTC SYNC] 数据库连接已移至 config.php，此处仅设置 $pdo
@@ -101,7 +107,6 @@ try {
     if (!isset($pdo) || !($pdo instanceof PDO)) {
          throw new Exception("PDO connection object (\$pdo) not found. Check core/config.php.");
     }
-    
 } catch (Exception $e) {
     // A2: 改进错误处理
     error_log("Database Connection Error: " . $e->getMessage());
@@ -109,30 +114,24 @@ try {
 }
 
 // --- 4. 全局数据加载 ---
-
 // [A2.1] 加载待处理班次复核 (用于侧边栏徽章)
 $pending_shift_review_count = getPendingShiftReviewCount($pdo);
 
-
 // --- 5. 页面路由和控制器 ---
-
 $page = $_GET['page'] ?? 'dashboard';
 $data = [];
 $page_title = 'Dashboard';
-$page_js = null; // [GEMINI FIX] 使用 $page_js (string) 替换 $js_files (array)
+$js_files = [];       // 新版：各页面把需要的脚本 push 到此数组
 $view_path = '';
 
 try {
     switch ($page) {
-        
         // --- 核心 ---
         case 'dashboard':
             check_role(ROLE_USER); // 任何登录用户
             $page_title = '仪表盘';
-            // [A2.1] 加载仪表盘所需 JS
-            // [GEMINI FIX] Chart.js 在 main.php 头部加载，此处无需设置
-            $page_js = null;
-            // [A2.1] 加载仪表盘所需数据
+            // 仪表盘所需 JS（Chart.js 已在 main.php 头部引入，这里可留白或保留为 CDN）
+            // $js_files[] = 'https://cdn.jsdelivr.net/npm/chart.js';
             $data['kpi_data'] = getDashboardKpis($pdo);
             $data['low_stock_alerts'] = getLowStockAlerts($pdo, 10);
             $data['sales_trend'] = getSalesTrendLast7Days($pdo);
@@ -141,9 +140,9 @@ try {
             break;
 
         case 'profile':
-            check_role(ROLE_USER); // 任何登录用户
+            check_role(ROLE_USER);
             $page_title = '个人资料';
-            $page_js = 'profile.js'; // [GEMINI FIX]
+            $js_files[] = 'profile.js';
             $data['current_user'] = getUserById($pdo, (int)$_SESSION['user_id']);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/profile_view.php');
             break;
@@ -152,16 +151,16 @@ try {
         case 'material_management':
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = '物料管理 (RMS)';
-            $page_js = 'material_management.js'; // [GEMINI FIX]
+            $js_files[] = 'material_management.js';
             $data['materials'] = getAllMaterials($pdo);
-            $data['unit_options'] = getAllUnits($pdo); // 用于下拉
+            $data['unit_options'] = getAllUnits($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/material_management_view.php');
             break;
             
         case 'cup_management':
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = '杯型管理 (RMS)';
-            $page_js = 'cup_management.js'; // [GEMINI FIX]
+            $js_files[] = 'cup_management.js';
             $data['cups'] = getAllCups($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/cup_management_view.php');
             break;
@@ -169,7 +168,7 @@ try {
         case 'ice_option_management':
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = '冰量选项 (RMS)';
-            $page_js = 'ice_option_management.js'; // [GEMINI FIX]
+            $js_files[] = 'ice_option_management.js';
             $data['ice_options'] = getAllIceOptions($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/ice_option_management_view.php');
             break;
@@ -177,7 +176,7 @@ try {
         case 'sweetness_option_management':
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = '甜度选项 (RMS)';
-            $page_js = 'sweetness_option_management.js'; // [GEMINI FIX]
+            $js_files[] = 'sweetness_option_management.js';
             $data['sweetness_options'] = getAllSweetnessOptions($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/sweetness_option_management_view.php');
             break;
@@ -185,7 +184,7 @@ try {
         case 'product_status_management':
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = '产品状态 (RMS)';
-            $page_js = 'product_status_management.js'; // [GEMINI FIX]
+            $js_files[] = 'product_status_management.js';
             $data['statuses'] = getAllStatuses($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/product_status_management_view.php');
             break;
@@ -193,7 +192,7 @@ try {
         case 'unit_management':
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = '单位管理 (RMS)';
-            $page_js = 'unit_management.js'; // [GEMINI FIX]
+            $js_files[] = 'unit_management.js';
             $data['units'] = getAllUnits($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/unit_management_view.php');
             break;
@@ -201,8 +200,8 @@ try {
         case 'rms_product_management':
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = '产品配方 (L1/L3)';
-            $page_js = 'rms/rms_product_management.js'; // [GEMINI FIX] 修正路径 (js/ 已在 main.php)
-            $data['base_products'] = getAllBaseProducts($pdo); // kds_helper
+            $js_files[] = 'js/rms/rms_product_management.js'; // 兼容桥会剔除前缀
+            $data['base_products'] = getAllBaseProducts($pdo);
             $data['material_options'] = getAllMaterials($pdo);
             $data['unit_options'] = getAllUnits($pdo);
             $data['cup_options'] = getAllCups($pdo);
@@ -215,7 +214,7 @@ try {
         case 'rms_global_rules':
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = '全局规则 (L2)';
-            $page_js = 'rms/rms_global_rules.js'; // [GEMINI FIX] 修正路径
+            $js_files[] = 'js/rms/rms_global_rules.js'; // 兼容桥会剔除前缀
             $data['global_rules'] = getAllGlobalRules($pdo);
             $data['material_options'] = getAllMaterials($pdo);
             $data['unit_options'] = getAllUnits($pdo);
@@ -229,7 +228,7 @@ try {
         case 'pos_category_management':
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = 'POS 分类管理';
-            $page_js = 'pos_category_management.js'; // [GEMINI FIX]
+            $js_files[] = 'pos_category_management.js';
             $data['pos_categories'] = getAllPosCategories($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_category_management_view.php');
             break;
@@ -237,11 +236,11 @@ try {
         case 'pos_menu_management':
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = 'POS 菜单商品管理';
-            $page_js = 'pos_menu_management.js'; // [GEMINI FIX]
-            $data['menu_items'] = getAllMenuItems($pdo); // kds_helper
+            $js_files[] = 'pos_menu_management.js';
+            $data['menu_items'] = getAllMenuItems($pdo);
             $data['pos_categories'] = getAllPosCategories($pdo);
             // [R2-Final] 注入 R2.3 页面所需的标签数据
-            $data['all_pos_tags'] = getAllPosTags($pdo); 
+            $data['all_pos_tags'] = getAllPosTags($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_menu_management_view.php');
             break;
 
@@ -260,7 +259,7 @@ try {
                 $page_title = '管理规格: ' . htmlspecialchars($data['menu_item']['name_zh']);
                 $data['variants'] = getAllVariantsByMenuItemId($pdo, $menu_item_id);
                 $data['recipes'] = getAllBaseProducts($pdo); // 用于关联 KDS P-Code
-                $page_js = 'pos_variants_management.js'; // [GEMINI FIX]
+                $js_files[] = 'pos_variants_management.js';
                 $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_variants_management_view.php');
             } else {
                 header('Location: ?page=pos_menu_management');
@@ -271,7 +270,7 @@ try {
         case 'pos_addon_management':
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = 'POS 加料管理';
-            $page_js = 'pos_addon_management.js'; // [GEMINI FIX]
+            $js_files[] = 'pos_addon_management.js';
             $data['addons'] = getAllPosAddons($pdo);
             $data['materials'] = getAllMaterials($pdo);
             // [R2-Final] 注入 R2.2 页面所需的标签数据
@@ -280,23 +279,19 @@ try {
             break;
 
         // --- [R2-Final] START: 新增次卡路由 (BMS/RMS) ---
-        
         case 'pos_tag_management': // R2.1
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = 'POS 标签管理 (次卡)';
-            $page_js = 'pos_tags_management.js'; // [GEMINI FIX]
+            $js_files[] = 'pos_tags_management.js';
             $data['pos_tags'] = getAllPosTags($pdo);
-            // ================== [ 1.png 错误修复 ] ==================
-            // 修复了视图文件名的拼写错误：
-            // pos_tag_management_view.php -> pos_tags_management_view.php
-            // =======================================================
+            // 视图名修正：pos_tag_management_view.php -> pos_tags_management_view.php
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_tags_management_view.php');
             break;
 
         case 'pos_seasons_pass_dashboard': // B3
             check_role(ROLE_ADMIN);
             $page_title = '次卡数据看板 (B3)';
-            $page_js = null; // [GEMINI FIX] 只读页面
+            // 只读，无需 js
             $data['kpis'] = getSeasonsPassDashboardKpis($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_seasons_pass_dashboard_view.php');
             break;
@@ -304,7 +299,7 @@ try {
         case 'pos_topup_orders': // B1
             check_role(ROLE_ADMIN);
             $page_title = '售卡(VR)审核 (B1)';
-            $page_js = 'pos_topup_orders.js'; // [GEMINI FIX]
+            $js_files[] = 'pos_topup_orders.js';
             $data['topup_orders'] = getAllTopupOrders($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_topup_orders_view.php');
             break;
@@ -312,19 +307,18 @@ try {
         case 'pos_redemptions_view': // B2
             check_role(ROLE_ADMIN);
             $page_title = '核销(TP)查询 (B2)';
-            $page_js = null; // [GEMINI FIX] 只读页面
+            // 只读，无需 js
             $data['redemption_batches'] = getAllRedemptionBatches($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_redemptions_view.php');
             break;
-            
         // --- [R2-Final] END ---
-            
+
         case 'pos_promotion_management':
             check_role(ROLE_PRODUCT_MANAGER);
             $page_title = '营销活动管理';
-            $page_js = 'pos_promotion_management.js'; // [GEMINI FIX]
+            $js_files[] = 'pos_promotion_management.js';
             $data['promotions'] = getAllPromotions($pdo);
-            $data['menu_items_for_select'] = getAllMenuItemsForSelect($pdo); // 修正
+            $data['menu_items_for_select'] = getAllMenuItemsForSelect($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_promotion_management_view.php');
             break;
             
@@ -332,7 +326,7 @@ try {
         case 'pos_member_management':
             check_role(ROLE_ADMIN);
             $page_title = '会员管理';
-            $page_js = 'pos_member_management.js'; // [GEMINI FIX]
+            $js_files[] = 'pos_member_management.js';
             $data['members'] = getAllMembers($pdo);
             $data['member_levels'] = getAllMemberLevels($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_member_management_view.php');
@@ -341,16 +335,16 @@ try {
         case 'pos_member_level_management':
             check_role(ROLE_ADMIN);
             $page_title = '会员等级管理';
-            $page_js = 'pos_member_level_management.js'; // [GEMINI FIX]
+            $js_files[] = 'pos_member_level_management.js';
             $data['member_levels'] = getAllMemberLevels($pdo);
-            $data['promotions_for_select'] = getAllPromotions($pdo); // 修正
+            $data['promotions_for_select'] = getAllPromotions($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_member_level_management_view.php');
             break;
             
         case 'pos_member_settings':
             check_role(ROLE_ADMIN);
             $page_title = '积分/会员设置';
-            $page_js = 'pos_member_settings.js'; // [GEMINI FIX]
+            $js_files[] = 'pos_member_settings.js';
             // 数据由 JS (load) 异步加载
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_member_settings_view.php');
             break;
@@ -358,9 +352,9 @@ try {
         case 'pos_point_redemption_rules':
             check_role(ROLE_ADMIN);
             $page_title = '积分兑换规则';
-            $page_js = 'pos_point_redemption_rules.js'; // [GEMINI FIX]
+            $js_files[] = 'pos_point_redemption_rules.js';
             $data['rules'] = getAllRedemptionRules($pdo);
-            $data['promotions_for_select'] = getAllPromotions($pdo); // 修正
+            $data['promotions_for_select'] = getAllPromotions($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_point_redemption_rules_view.php');
             break;
 
@@ -368,7 +362,7 @@ try {
         case 'store_management':
             check_role(ROLE_ADMIN);
             $page_title = '门店管理';
-            $page_js = 'store_management.js'; // [GEMINI FIX]
+            $js_files[] = 'store_management.js';
             $data['stores'] = getAllStores($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/store_management_view.php');
             break;
@@ -376,7 +370,7 @@ try {
         case 'pos_invoice_list':
             check_role(ROLE_ADMIN);
             $page_title = '票据列表 (SIF)';
-            $page_js = null; // [GEMINI FIX] 列表页只读
+            // 只读
             $data['invoices'] = getAllInvoices($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_invoice_list_view.php');
             break;
@@ -387,19 +381,19 @@ try {
             if ($invoice_id <= 0) {
                  header('Location: ?page=pos_invoice_list'); exit;
             }
-            $data['invoice_data'] = getInvoiceDetails($pdo, $invoice_id); // 修正变量名
+            $data['invoice_data'] = getInvoiceDetails($pdo, $invoice_id);
             if (!$data['invoice_data']) {
                 header('Location: ?page=pos_invoice_list'); exit;
             }
             $page_title = '票据详情: ' . htmlspecialchars($data['invoice_data']['series'] . '-' . $data['invoice_data']['number']);
-            $page_js = 'pos_invoice_management.js'; // [GEMINI FIX] JS 用于作废/更正
+            $js_files[] = 'pos_invoice_management.js'; // JS 用于作废/更正
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_invoice_detail_view.php');
             break;
 
         case 'sif_declaration':
             check_role(ROLE_SUPER_ADMIN);
             $page_title = 'SIF 声明管理';
-            $page_js = 'sif_declaration.js'; // [GEMINI FIX]
+            $js_files[] = 'sif_declaration.js';
             // 数据由 JS (load_sif) 异步加载
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/sif_declaration_view.php');
             break;
@@ -407,7 +401,7 @@ try {
         case 'pos_eod_reports':
             check_role(ROLE_ADMIN);
             $page_title = 'EOD 营业报告';
-            $page_js = null; // [GEMINI FIX] 只读
+            // 只读
             $data['eod_reports'] = getAllEodReports($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_eod_reports_view.php');
             break;
@@ -415,7 +409,7 @@ try {
         case 'pos_shift_review':
             check_role(ROLE_ADMIN);
             $page_title = '班次复核';
-            $page_js = 'pos_shift_review.js'; // [GEMINI FIX]
+            $js_files[] = 'pos_shift_review.js';
             $data['pending_reviews'] = getPendingShiftReviews($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_shift_review_view.php');
             break;
@@ -432,7 +426,7 @@ try {
                  header('Location: ?page=store_management'); exit;
             }
             $page_title = 'KDS 员工管理: ' . htmlspecialchars($data['store_data']['store_name']);
-            $page_js = 'kds_user_management.js'; // [GEMINI FIX]
+            $js_files[] = 'kds_user_management.js';
             $data['kds_users'] = getAllKdsUsersByStoreId($pdo, $store_id);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/kds_user_management_view.php');
             break;
@@ -440,7 +434,7 @@ try {
         case 'warehouse_stock_management':
             check_role(ROLE_ADMIN);
             $page_title = '总仓库存管理';
-            $page_js = 'warehouse_stock_logic.js'; // [GEMINI FIX]
+            $js_files[] = 'warehouse_stock_logic.js';
             $data['stock_items'] = getWarehouseStock($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/warehouse_stock_management_view.php');
             break;
@@ -448,7 +442,7 @@ try {
         case 'store_stock_view':
             check_role(ROLE_ADMIN);
             $page_title = '门店库存 (只读)';
-            $page_js = null; // [GEMINI FIX] 只读
+            // 只读
             $data['stock_data'] = getAllStoreStock($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/store_stock_view.php');
             break;
@@ -456,7 +450,7 @@ try {
         case 'expiry_management':
             check_role(ROLE_ADMIN);
             $page_title = '效期管理';
-            $page_js = null; // [GEMINI FIX] 只读
+            // 只读
             $data['expiry_items'] = getAllExpiryItems($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/expiry_management_view.php');
             break;
@@ -464,7 +458,7 @@ try {
         case 'product_availability':
             check_role(ROLE_PRODUCT_MANAGER); // 权限变更为产品经理
             $page_title = '物料清单与上架';
-            $page_js = 'product_availability.js'; // [GEMINI FIX]
+            $js_files[] = 'product_availability.js';
             $data['material_options'] = getAllMaterials($pdo);
             // $data['availability'] = ...; // 数据由 JS 异步加载
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/product_availability_view.php');
@@ -474,7 +468,7 @@ try {
         case 'user_management':
             check_role(ROLE_SUPER_ADMIN);
             $page_title = 'HQ 账户管理';
-            $page_js = 'user_management.js'; // [GEMINI FIX]
+            $js_files[] = 'user_management.js';
             $data['users'] = getAllUsers($pdo);
             $data['roles'] = getAllRoles($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/user_management_view.php');
@@ -483,7 +477,7 @@ try {
         case 'pos_print_template_management':
             check_role(ROLE_SUPER_ADMIN);
             $page_title = '打印模板管理';
-            $page_js = 'pos_print_template_editor.js'; // [GEMINI FIX]
+            $js_files[] = 'pos_print_template_editor.js';
             $data['templates'] = getAllPrintTemplates($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/pos_print_template_management_view.php');
             break;
@@ -491,8 +485,8 @@ try {
         case 'pos_print_template_variables':
             check_role(ROLE_SUPER_ADMIN);
             $page_title = '打印模板变量说明';
-            $page_js = null; // [GEMINI FIX]
-             try {
+            // 只读
+            try {
                 $stmt = $pdo->query("SELECT template_type, template_content FROM pos_print_templates WHERE store_id IS NULL AND is_active = 1");
                 $data['default_templates'] = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
             } catch (Throwable $e) { $data['default_templates'] = []; }
@@ -503,7 +497,7 @@ try {
         case 'kds_sop_rules':
             check_role(ROLE_SUPER_ADMIN);
             $page_title = 'KDS SOP 解析规则';
-            $page_js = 'kds_sop_rules.js'; // [GEMINI FIX]
+            $js_files[] = 'kds_sop_rules.js';
             $data['stores'] = getAllStores($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/kds_sop_rules_view.php');
             break;
@@ -511,7 +505,7 @@ try {
         case 'stock_allocation':
             check_role(ROLE_ADMIN); // 权限变更为管理员
             $page_title = '库存调拨';
-            $page_js = 'stock_allocation.js'; // [GEMINI FIX]
+            $js_files[] = 'stock_allocation.js';
             $data['stores'] = getAllStores($pdo);
             $data['materials'] = getAllMaterials($pdo);
             $view_path = realpath(__DIR__ . '/../../app/views/cpsys/stock_allocation_view.php');
@@ -522,7 +516,7 @@ try {
             $page = 'dashboard';
             check_role(ROLE_USER);
             $page_title = '仪表盘 (Default)';
-            $page_js = null; // [GEMINI FIX]
+            // $js_files[] = 'https://cdn.jsdelivr.net/npm/chart.js';
             $data['kpi_data'] = getDashboardKpis($pdo);
             $data['low_stock_alerts'] = getLowStockAlerts($pdo, 10);
             $data['sales_trend'] = getSalesTrendLast7Days($pdo);
@@ -547,6 +541,24 @@ try {
     error_log("Unhandled Exception in index.php: " . $e->getMessage() . "\n" . $e->getTraceAsString());
 }
 
+// --- 5.9 兼容桥：让新版 $js_files 兼容旧版 main.php 的 $page_js ---
+// 旧版 main.php 只会加载 $page_js（字符串），不会加载 $js_files（数组）。
+// 这里把 $js_files 里的第一个“本地脚本”转换成 $page_js（去掉前导的 "js/" 前缀），
+// 以确保旧版 main.php 也能正常加载页面脚本（事件绑定/回填逻辑）。
+if ((!isset($page_js) || !$page_js) && isset($js_files) && is_array($js_files)) {
+    foreach ($js_files as $src) {
+        if (!is_string($src) || $src === '') continue;
+        // 跳过 CDN / 绝对 URL，只取本地相对路径脚本
+        if (preg_match('#^https?://#i', $src)) continue;
+
+        // 规范化：去掉可能的开头斜杠和 "js/" 前缀，保持旧 main.php 的拼接规则：<script src="js/{$page_js}">
+        $src = preg_replace('#^/+?#', '', $src);
+        $src = preg_replace('#^js/#', '', $src);
+
+        $page_js = $src;
+        break;
+    }
+}
 
 // --- 6. 渲染布局 ---
 // $data 数组中的所有键都将作为变量在 main.php 和 $view_path 中可用

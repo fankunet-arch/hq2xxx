@@ -2,8 +2,27 @@
 /**
  * Toptea HQ - CPSYS API 注册表 (BMS - POS Management)
  * 注册 POS 菜单、商品、会员、促销等资源
- * Version: 1.3.004 (A2 UTC Precision Fix)
- * Date: 2025-11-11
+ * Version: 1.6.0 (Global Addon Setting Move)
+ * Date: 2025-11-14
+ *
+ * [GEMINI REFACTOR 2025-11-14]:
+ * - Moved 'global_free_addon_limit' from 'pos_settings' handlers
+ * to dedicated 'pos_addons' handlers (get/save_global_settings).
+ *
+ * [P4/P2] Added:
+ * - handle_settings_load() now queries 'pass_free_addon_limit'.
+ * - handle_settings_save() now validates and saves 'pass_free_addon_limit'.
+ *
+ * [R2/B1] Added:
+ * - Injected log_audit_action() into handle_topup_order_review (B1)
+ *
+ * [R2] Added:
+ * - Injected log_audit_action() into handle_menu_item_save
+ * - Injected log_audit_action() into handle_menu_item_delete
+ * - Injected log_audit_action() into handle_pos_category_save
+ * - Injected log_audit_action() into handle_pos_category_delete
+ * - Injected log_audit_action() into handle_addon_save
+ * - Injected log_audit_action() into handle_addon_delete
  *
  * [A2.2 UTC FIX]:
  * - 修复了 A2 阶段的严重 Bug：
@@ -43,6 +62,16 @@ function handle_pos_category_save(PDO $pdo, array $config, array $input_data): v
     $name_es = trim($data['name_es'] ?? '');
     $sort = (int)($data['sort_order'] ?? 99);
     if (empty($code) || empty($name_zh) || empty($name_es)) json_error('分类编码和双语名称均为必填项。', 400);
+    
+    // [R2] 审计
+    $data_before = null;
+    $action_name = 'rms.category.create';
+    if ($id) {
+        if (!function_exists('getPosCategoryById')) json_error('审计失败: 缺少 getPosCategoryById 助手。', 500);
+        $data_before = getPosCategoryById($pdo, $id);
+        $action_name = 'rms.category.update';
+    }
+
     $sql_check = "SELECT id FROM pos_categories WHERE category_code = ? AND deleted_at IS NULL" . ($id ? " AND id != ?" : "");
     $params_check = $id ? [$code, $id] : [$code];
     $stmt_check = $pdo->prepare($sql_check);
@@ -52,34 +81,51 @@ function handle_pos_category_save(PDO $pdo, array $config, array $input_data): v
     if ($id) {
         $stmt = $pdo->prepare("UPDATE pos_categories SET category_code = ?, name_zh = ?, name_es = ?, sort_order = ? WHERE id = ?");
         $stmt->execute([$code, $name_zh, $name_es, $sort, $id]);
-        json_ok(['id' => $id], '分类已成功更新！');
+        $message = '分类已成功更新！';
     } else {
         $stmt = $pdo->prepare("INSERT INTO pos_categories (category_code, name_zh, name_es, sort_order) VALUES (?, ?, ?, ?)");
         $stmt->execute([$code, $name_zh, $name_es, $sort]);
-        json_ok(['id' => (int)$pdo->lastInsertId()], '新分类已成功创建！');
+        $id = (int)$pdo->lastInsertId();
+        $message = '新分类已成功创建！';
     }
+
+    // [R2] 审计：写入日志
+    if (!function_exists('getPosCategoryById')) json_error('审计失败: 缺少 getPosCategoryById 助手。', 500);
+    $data_after = getPosCategoryById($pdo, $id);
+    log_audit_action($pdo, $action_name, 'pos_categories', $id, $data_before, $data_after);
+
+    json_ok(['id' => $id], $message);
 }
 function handle_pos_category_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
+    $id = (int)$id;
+
+    // [R2] 审计：获取变更前数据
+    if (!function_exists('getPosCategoryById')) json_error('审计失败: 缺少 getPosCategoryById 助手。', 500);
+    $data_before = getPosCategoryById($pdo, $id);
+    if (!$data_before) {
+        json_error('未找到要删除的分类。', 404);
+    }
+
     // [A2.2 UTC FIX] 
     // pos_categories.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
     $now_utc_str = utc_now()->format('Y-m-d H:i:s');
     $stmt = $pdo->prepare("UPDATE pos_categories SET deleted_at = ? WHERE id = ?");
-    $stmt->execute([$now_utc_str, (int)$id]);
+    $stmt->execute([$now_utc_str, $id]);
+
+    // [R2] 审计：写入日志
+    log_audit_action($pdo, 'rms.category.delete', 'pos_categories', $id, $data_before, null);
+
     json_ok(null, '分类已成功删除。');
 }
 
 // --- 处理器: POS 菜单商品 (pos_menu_items) ---
 function handle_menu_item_get(PDO $pdo, array $config, array $input_data): void {
     $id = $_GET['id'] ?? json_error('缺少 id', 400);
-    $stmt = $pdo->prepare("SELECT * FROM pos_menu_items WHERE id = ? AND deleted_at IS NULL");
-    $stmt->execute([(int)$id]);
-    $data = $stmt->fetch(PDO::FETCH_ASSOC);
     
-    // [R2.2] 获取关联的 tags
-    if ($data) {
-        $data['tag_ids'] = getProductTagIds($pdo, (int)$id);
-    }
+    // [R2] 审计依赖
+    if (!function_exists('getPosMenuItemById')) json_error('审计失败: 缺少 getPosMenuItemById 助手。', 500);
+    $data = getPosMenuItemById($pdo, (int)$id);
     
     $data ? json_ok($data) : json_error('未找到商品', 404);
 }
@@ -100,16 +146,27 @@ function handle_menu_item_save(PDO $pdo, array $config, array $input_data): void
     // [R2.2] 标签
     $tag_ids = $data['tag_ids'] ?? [];
     
+    // [R2] 审计
+    $data_before = null;
+    $action_name = 'rms.product.create';
+    if ($id) {
+        if (!function_exists('getPosMenuItemById')) json_error('审计失败: 缺少 getPosMenuItemById 助手。', 500);
+        $data_before = getPosMenuItemById($pdo, $id);
+        $action_name = 'rms.product.update';
+    }
+
     $pdo->beginTransaction();
     try {
         if ($id) {
             $params[':id'] = $id;
             $sql = "UPDATE pos_menu_items SET name_zh = :name_zh, name_es = :name_es, pos_category_id = :pos_category_id, description_zh = :description_zh, description_es = :description_es, sort_order = :sort_order, is_active = :is_active WHERE id = :id";
             $pdo->prepare($sql)->execute($params);
+            $message = '商品信息已成功更新！';
         } else {
             $sql = "INSERT INTO pos_menu_items (name_zh, name_es, pos_category_id, description_zh, description_es, sort_order, is_active) VALUES (:name_zh, :name_es, :pos_category_id, :description_zh, :description_es, :sort_order, :is_active)";
             $pdo->prepare($sql)->execute($params);
             $id = (int)$pdo->lastInsertId();
+            $message = '新商品已成功创建！';
         }
 
         // [R2.2] START: 更新 Tag 关联
@@ -128,7 +185,13 @@ function handle_menu_item_save(PDO $pdo, array $config, array $input_data): void
         // [R2.2] END: 更新 Tag 关联
         
         $pdo->commit();
-        json_ok(['id' => $id], $id ? '商品信息已成功更新！' : '新商品已成功创建！');
+
+        // [R2] 审计：写入日志
+        if (!function_exists('getPosMenuItemById')) json_error('审计失败: 缺少 getPosMenuItemById 助手。', 500);
+        $data_after = getPosMenuItemById($pdo, $id);
+        log_audit_action($pdo, $action_name, 'pos_menu_items', $id, $data_before, $data_after);
+        
+        json_ok(['id' => $id], $message);
         
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -138,6 +201,13 @@ function handle_menu_item_save(PDO $pdo, array $config, array $input_data): void
 function handle_menu_item_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
     $id = (int)$id;
+
+    // [R2] 审计：获取变更前数据
+    if (!function_exists('getPosMenuItemById')) json_error('审计失败: 缺少 getPosMenuItemById 助手。', 500);
+    $data_before = getPosMenuItemById($pdo, $id);
+    if (!$data_before) {
+        json_error('未找到要删除的商品。', 404);
+    }
 
     // [A2.2 UTC FIX] 
     // pos_menu_items.deleted_at 和 pos_item_variants.deleted_at 都是 timestamp(0)。
@@ -154,6 +224,10 @@ function handle_menu_item_delete(PDO $pdo, array $config, array $input_data): vo
     $stmt_tags->execute([$id]);
 
     $pdo->commit();
+
+    // [R2] 审计：写入日志
+    log_audit_action($pdo, 'rms.product.delete', 'pos_menu_items', $id, $data_before, null);
+
     json_ok(null, '商品及其所有规格已成功删除。');
 }
 
@@ -419,14 +493,10 @@ function handle_variant_delete(PDO $pdo, array $config, array $input_data): void
 // --- 处理器: POS 加料 (pos_addons) ---
 function handle_addon_get(PDO $pdo, array $config, array $input_data): void {
     $id = $_GET['id'] ?? json_error('缺少 id', 400);
-    $stmt = $pdo->prepare("SELECT * FROM pos_addons WHERE id = ? AND deleted_at IS NULL");
-    $stmt->execute([(int)$id]);
-    $data = $stmt->fetch(PDO::FETCH_ASSOC);
     
-    // [R2.2] 获取关联的 tags
-    if ($data) {
-        $data['tag_ids'] = getAddonTagIds($pdo, (int)$id);
-    }
+    // [R2] 审计依赖
+    if (!function_exists('getPosAddonById')) json_error('审计失败: 缺少 getPosAddonById 助手。', 500);
+    $data = getPosAddonById($pdo, (int)$id);
     
     $data ? json_ok($data) : json_error('未找到加料', 404);
 }
@@ -446,6 +516,15 @@ function handle_addon_save(PDO $pdo, array $config, array $input_data): void {
     
     // [R2.2] 标签
     $tag_ids = $data['tag_ids'] ?? [];
+
+    // [R2] 审计
+    $data_before = null;
+    $action_name = 'rms.addon.create';
+    if ($id) {
+        if (!function_exists('getPosAddonById')) json_error('审计失败: 缺少 getPosAddonById 助手。', 500);
+        $data_before = getPosAddonById($pdo, $id);
+        $action_name = 'rms.addon.update';
+    }
     
     // 检查 code 唯一性
     $sql_check = "SELECT id FROM pos_addons WHERE addon_code = ? AND deleted_at IS NULL" . ($id ? " AND id != ?" : "");
@@ -460,10 +539,12 @@ function handle_addon_save(PDO $pdo, array $config, array $input_data): void {
             $params[':id'] = $id;
             $sql = "UPDATE pos_addons SET addon_code = :addon_code, name_zh = :name_zh, name_es = :name_es, price_eur = :price_eur, material_id = :material_id, sort_order = :sort_order, is_active = :is_active WHERE id = :id";
             $pdo->prepare($sql)->execute($params);
+            $message = '加料已成功更新！';
         } else {
             $sql = "INSERT INTO pos_addons (addon_code, name_zh, name_es, price_eur, material_id, sort_order, is_active) VALUES (:addon_code, :name_zh, :name_es, :price_eur, :material_id, :sort_order, :is_active)";
             $pdo->prepare($sql)->execute($params);
             $id = (int)$pdo->lastInsertId();
+            $message = '新加料已成功创建！';
         }
 
         // [R2.2] START: 更新 Tag 关联
@@ -483,7 +564,13 @@ function handle_addon_save(PDO $pdo, array $config, array $input_data): void {
         // [R2.2] END: 更新 Tag 关联
 
         $pdo->commit();
-        json_ok(['id' => $id], $id ? '加料已成功更新！' : '新加料已成功创建！');
+        
+        // [R2] 审计：写入日志
+        if (!function_exists('getPosAddonById')) json_error('审计失败: 缺少 getPosAddonById 助手。', 500);
+        $data_after = getPosAddonById($pdo, $id);
+        log_audit_action($pdo, $action_name, 'pos_addons', $id, $data_before, $data_after);
+
+        json_ok(['id' => $id], $message);
 
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -492,6 +579,15 @@ function handle_addon_save(PDO $pdo, array $config, array $input_data): void {
 }
 function handle_addon_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
+    $id = (int)$id;
+
+    // [R2] 审计：获取变更前数据
+    if (!function_exists('getPosAddonById')) json_error('审计失败: 缺少 getPosAddonById 助手。', 500);
+    $data_before = getPosAddonById($pdo, $id);
+    if (!$data_before) {
+        json_error('未找到要删除的加料。', 404);
+    }
+
     // [A2.2 UTC FIX] 
     // pos_addons.deleted_at 是 timestamp(0)。必须使用 'Y-m-d H:i:s'
     $now_utc_str = utc_now()->format('Y-m-d H:i:s');
@@ -506,12 +602,51 @@ function handle_addon_delete(PDO $pdo, array $config, array $input_data): void {
         $stmt_tags->execute([(int)$id]);
         
         $pdo->commit();
+        
+        // [R2] 审计：写入日志
+        log_audit_action($pdo, 'rms.addon.delete', 'pos_addons', $id, $data_before, null);
+
         json_ok(null, '加料已成功删除。');
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         json_error('删除加料时出错。', 500, ['debug' => $e->getMessage()]);
     }
 }
+
+// --- [GEMINI REFACTOR 2025-11-14] START: 新增的加料全局设置处理器 ---
+const GLOBAL_ADDON_LIMIT_KEY = 'global_free_addon_limit';
+function handle_addon_get_global_settings(PDO $pdo, array $config, array $input_data): void {
+    $stmt = $pdo->prepare("SELECT setting_value FROM pos_settings WHERE setting_key = ?");
+    $stmt->execute([GLOBAL_ADDON_LIMIT_KEY]);
+    $value = $stmt->fetchColumn();
+    
+    $limit = ($value === false || $value === null) ? '0' : (string)$value;
+    
+    json_ok([GLOBAL_ADDON_LIMIT_KEY => $limit], 'Settings loaded.');
+}
+function handle_addon_save_global_settings(PDO $pdo, array $config, array $input_data): void {
+    // 这个处理器不希望有 'data' 包装
+    $limit_str = $input_data[GLOBAL_ADDON_LIMIT_KEY] ?? null;
+    
+    $intVal = filter_var($limit_str, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+    if ($intVal === false) { 
+        json_error('“免费加料上限”必须是一个大于等于0的整数。', 400); 
+    }
+    $value = (string)$intVal;
+
+    $pdo->beginTransaction();
+    $stmt = $pdo->prepare("INSERT INTO pos_settings (setting_key, setting_value, description) VALUES (:key, :value, :desc) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+    $stmt->execute([
+        ':key' => GLOBAL_ADDON_LIMIT_KEY,
+        ':value' => $value,
+        ':desc' => 'Global limit for free addons per item (0=unlimited)'
+    ]);
+    $pdo->commit();
+    
+    json_ok(null, '全局加料设置已保存！');
+}
+// --- [GEMINI REFACTOR 2025-11-14] END ---
+
 
 // --- [R2.1] START: 处理器: POS 标签 (pos_tags) ---
 function handle_pos_tag_get(PDO $pdo, array $config, array $input_data): void {
@@ -527,6 +662,14 @@ function handle_pos_tag_save(PDO $pdo, array $config, array $input_data): void {
     
     if (empty($code) || empty($name)) json_error('标签编码和名称均为必填项。', 400);
     
+    // [R2] 审计
+    $data_before = null;
+    $action_name = 'rms.tag.create';
+    if ($id) {
+        $data_before = getTagById($pdo, $id); // 获取变更前数据
+        $action_name = 'rms.tag.update';
+    }
+
     // 检查 code 唯一性
     $sql_check = "SELECT tag_id FROM pos_tags WHERE tag_code = ?" . ($id ? " AND tag_id != ?" : "");
     $params_check = $id ? [$code, $id] : [$code];
@@ -537,15 +680,28 @@ function handle_pos_tag_save(PDO $pdo, array $config, array $input_data): void {
     if ($id) {
         $stmt = $pdo->prepare("UPDATE pos_tags SET tag_code = ?, tag_name = ? WHERE tag_id = ?");
         $stmt->execute([$code, $name, $id]);
-        json_ok(['id' => $id], '标签已成功更新！');
     } else {
         $stmt = $pdo->prepare("INSERT INTO pos_tags (tag_code, tag_name) VALUES (?, ?)");
         $stmt->execute([$code, $name]);
-        json_ok(['id' => (int)$pdo->lastInsertId()], '新标签已成功创建！');
+        $id = (int)$pdo->lastInsertId();
     }
+    
+    // [R2] 审计：写入日志
+    $data_after = getTagById($pdo, $id);
+    log_audit_action($pdo, $action_name, 'pos_tags', $id, $data_before, $data_after);
+
+    json_ok(['id' => $id], $id ? '标签已成功更新！' : '新标签已成功创建！');
 }
 function handle_pos_tag_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
+    $id = (int)$id;
+
+    // [R2] 审计：获取变更前数据
+    $data_before = getTagById($pdo, $id);
+    if (!$data_before) {
+        json_error('未找到要删除的标签。', 404);
+    }
+    
     // 硬删除 (Hard Delete)，因为此表没有 deleted_at
     // [R2.2] 增加事务，确保 map 表也被删除 (虽然 FK 已设置 CASCADE)
     $pdo->beginTransaction();
@@ -560,6 +716,10 @@ function handle_pos_tag_delete(PDO $pdo, array $config, array $input_data): void
         $stmt->execute([(int)$id]);
         
         $pdo->commit();
+
+        // [R2] 审计：写入日志
+        log_audit_action($pdo, 'rms.tag.delete', 'pos_tags', $id, $data_before, null);
+
         json_ok(null, '标签已成功删除。');
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -583,13 +743,26 @@ function handle_topup_order_review(PDO $pdo, array $config, array $input_data): 
         json_error('无效的请求参数 (order_id, action) 或未登录。', 400);
     }
     
+    // [R2/B1] 审计：获取变更前数据
+    if (!function_exists('getTopupOrderById')) json_error('审计失败: 缺少 getTopupOrderById 助手。', 500);
+    $data_before = getTopupOrderById($pdo, $order_id);
+    if (!$data_before) {
+        json_error("未找到订单 (ID: {$order_id})。", 404);
+    }
+    if ($data_before['review_status'] !== 'pending') {
+        json_error("订单 (ID: {$order_id}) 状态为 '{$data_before['review_status']}'，无法重复处理。", 409);
+    }
+    
     // A2 UTC: 确保所有时间戳使用 0 精度 (Y-m-d H:i:s)
     // topup_orders.reviewed_at 和 member_passes.activated_at/expires_at 均为 timestamp(0)
     $now_utc_str = utc_now()->format('Y-m-d H:i:s');
     
     $pdo->beginTransaction();
     try {
+        $audit_action_name = '';
+        
         if ($action === 'APPROVE') {
+            $audit_action_name = 'bms.pass_vr.approve';
             // 调用辅助函数激活次卡
             $result = activate_member_pass($pdo, $order_id, $reviewer_id, $now_utc_str);
             if ($result !== true) {
@@ -598,21 +771,29 @@ function handle_topup_order_review(PDO $pdo, array $config, array $input_data): 
             }
         } else {
             // 仅拒绝
-            $stmt_check = $pdo->prepare("SELECT status FROM topup_orders WHERE order_id = ? FOR UPDATE");
+            $audit_action_name = 'bms.pass_vr.reject';
+            
+            // (在 activate_member_pass 中已包含 FOR UPDATE 和 status 检查，此处为 REJECT 补充)
+            $stmt_check = $pdo->prepare("SELECT review_status FROM topup_orders WHERE topup_order_id = ? FOR UPDATE");
             $stmt_check->execute([$order_id]);
             $status = $stmt_check->fetchColumn();
-
-            if ($status !== 'PENDING') {
+            
+            if ($status !== 'pending') {
                  $pdo->rollBack();
-                 json_error("订单状态不是 PENDING，无法拒绝。", 409);
+                 json_error("订单状态不是 PENDING (而是 {$status})，无法拒绝。", 409);
             }
 
-            $sql = "UPDATE topup_orders SET status = 'REJECTED', reviewed_by_user_id = ?, reviewed_at = ? WHERE order_id = ?";
+            $sql = "UPDATE topup_orders SET review_status = 'rejected', reviewed_by_user_id = ?, reviewed_at = ? WHERE topup_order_id = ?";
             $stmt = $pdo->prepare($sql);
             $stmt->execute([$reviewer_id, $now_utc_str, $order_id]);
         }
 
         $pdo->commit();
+        
+        // [R2/B1] 审计：写入日志
+        $data_after = getTopupOrderById($pdo, $order_id);
+        log_audit_action($pdo, $audit_action_name, 'topup_orders', $order_id, $data_before, $data_after);
+
         json_ok(null, '订单 (ID: ' . $order_id . ') 已成功处理为: ' . $action);
 
     } catch (Exception $e) {
@@ -759,25 +940,42 @@ function handle_redemption_rule_delete(PDO $pdo, array $config, array $input_dat
 
 // --- 处理器: POS 设置 (pos_settings) ---
 function handle_settings_load(PDO $pdo, array $config, array $input_data): void {
+    // [GEMINI REFACTOR] 修改 SQL (移除 global_free_addon_limit)
     $stmt = $pdo->query("SELECT setting_key, setting_value FROM pos_settings WHERE setting_key LIKE 'points_%'");
     $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+    
+    // 默认值
     if (!isset($settings['points_euros_per_point'])) $settings['points_euros_per_point'] = '1.00';
+    // [GEMINI REFACTOR] 移除 global_free_addon_limit 的默认值
+    
     json_ok($settings, 'Settings loaded.');
 }
 function handle_settings_save(PDO $pdo, array $config, array $input_data): void {
     $settings_data = $input_data['settings'] ?? json_error('No settings data provided.', 400);
+    
+    // [GEMINI REFACTOR] 修改白名单
+    $allowed_keys = ['points_euros_per_point'];
+
     $pdo->beginTransaction();
     $stmt = $pdo->prepare("INSERT INTO pos_settings (setting_key, setting_value) VALUES (:key, :value) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+    
     foreach ($settings_data as $key => $value) {
+        
+        // 确保只保存白名单内的键
+        if (!in_array($key, $allowed_keys)) {
+            continue;
+        }
+
+        // [GEMINI REFACTOR] 移除 global_free_addon_limit 的验证
         if ($key === 'points_euros_per_point') {
             $floatVal = filter_var($value, FILTER_VALIDATE_FLOAT);
             if ($floatVal === false || $floatVal <= 0) { $pdo->rollBack(); json_error('“每积分所需欧元”必须是一个大于0的数字。', 400); }
             $value = number_format($floatVal, 2, '.', '');
-        }
-        if (strpos($key, 'points_') === 0) {
-            $stmt->execute([':key' => $key, ':value' => $value]);
-        }
+        } 
+        
+        $stmt->execute([':key' => $key, ':value' => $value]);
     }
+    
     $pdo->commit();
     json_ok(null, '设置已成功保存！');
 }
@@ -1032,7 +1230,15 @@ return [
     ],
     'pos_addons' => [
         'table' => 'pos_addons', 'pk' => 'id', 'soft_delete_col' => 'deleted_at', 'auth_role' => ROLE_SUPER_ADMIN,
-        'custom_actions' => [ 'get' => 'handle_addon_get', 'save' => 'handle_addon_save', 'delete' => 'handle_addon_delete', ],
+        'custom_actions' => [ 
+            'get' => 'handle_addon_get', 
+            'save' => 'handle_addon_save', 
+            'delete' => 'handle_addon_delete',
+            // --- [GEMINI REFACTOR 2025-11-14] START: 注册新动作 ---
+            'get_global_settings' => 'handle_addon_get_global_settings',
+            'save_global_settings' => 'handle_addon_save_global_settings',
+            // --- [GEMINI REFACTOR 2025-11-14] END ---
+        ],
     ],
     
     // --- [R2.1] START: 注册 pos_tags ---
@@ -1048,7 +1254,9 @@ return [
     
     // --- [R2.4] START: 注册 topup_orders ---
     'topup_orders' => [
-        'table' => 'topup_orders', 'pk' => 'order_id', 'soft_delete_col' => 'deleted_at', 'auth_role' => ROLE_SUPER_ADMIN,
+        'table' => 'topup_orders', 'pk' => 'topup_order_id', // [R2.4 FIX] 修正主键
+        'soft_delete_col' => null, // 假设没有软删除，或使用 status='refunded'
+        'auth_role' => ROLE_SUPER_ADMIN, // 假设 R2.4 视图需要
         'custom_actions' => [
             'review' => 'handle_topup_order_review',
         ],
@@ -1070,8 +1278,8 @@ return [
     'pos_settings' => [
         'table' => 'pos_settings', 'pk' => 'setting_key', 'soft_delete_col' => null, 'auth_role' => ROLE_SUPER_ADMIN,
         'custom_actions' => [
-            'load' => 'handle_settings_load',
-            'save' => 'handle_settings_save',
+            'load' => 'handle_settings_load', // (已修改)
+            'save' => 'handle_settings_save', // (已修改)
             'load_sif' => 'handle_sif_load',     // <-- 新增 SIF 动作
             'save_sif' => 'handle_sif_save',     // <-- 新增 SIF 动作
         ],

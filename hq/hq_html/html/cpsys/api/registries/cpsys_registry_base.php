@@ -3,7 +3,11 @@
  * Toptea HQ - CPSYS API 注册表 (Base System)
  * 注册核心系统资源 (用户, 门店, 字典, 打印模板等)
  *
- * Revision: 1.2.070 (Invoice Prefix & Multi-Printer Refactor)
+ * Revision: 1.3.0 (R2 Audit Implementation)
+ *
+ * [R2] Added:
+ * - Injected log_audit_action() into handle_unit_save
+ * - Injected log_audit_action() into handle_unit_delete
  *
  * [GEMINI SECURITY FIX V1.0 - 2025-11-10]
  * - Fixed handle_profile_save() to use password_verify() and password_hash(..., PASSWORD_BCRYPT)
@@ -803,6 +807,15 @@ function handle_unit_save(PDO $pdo, array $config, array $input_data): void {
     $id = $data['id'] ? (int)$data['id'] : null;
     $code = trim($data['unit_code'] ?? ''); $name_zh = trim($data['name_zh'] ?? ''); $name_es = trim($data['name_es'] ?? '');
     if (empty($code) || empty($name_zh) || empty($name_es)) json_error('编号和双语名称均为必填项。', 400);
+    
+    // [R2] 审计
+    $data_before = null;
+    $action_name = 'rms.unit.create';
+    if ($id) {
+        $data_before = getUnitById($pdo, $id); // 获取变更前数据
+        $action_name = 'rms.unit.update';
+    }
+
     $pdo->beginTransaction();
     if ($id) {
         $stmt_check = $pdo->prepare("SELECT id FROM kds_units WHERE unit_code = ? AND id != ? AND deleted_at IS NULL");
@@ -818,13 +831,31 @@ function handle_unit_save(PDO $pdo, array $config, array $input_data): void {
     }
     $pdo->prepare("INSERT INTO kds_unit_translations (unit_id, language_code, unit_name) VALUES (?, 'zh-CN', ?) ON DUPLICATE KEY UPDATE unit_name = VALUES(unit_name)")->execute([$id, $name_zh]);
     $pdo->prepare("INSERT INTO kds_unit_translations (unit_id, language_code, unit_name) VALUES (?, 'es-ES', ?) ON DUPLICATE KEY UPDATE unit_name = VALUES(unit_name)")->execute([$id, $name_es]);
+    
     $pdo->commit();
+    
+    // [R2] 写入审计日志
+    $data_after = getUnitById($pdo, $id);
+    log_audit_action($pdo, $action_name, 'kds_units', $id, $data_before, $data_after);
+    
     json_ok(['id' => $id], '单位已保存。');
 }
 function handle_unit_delete(PDO $pdo, array $config, array $input_data): void {
     $id = $input_data['id'] ?? json_error('缺少 id', 400);
+    $id = (int)$id;
+
+    // [R2] 审计
+    $data_before = getUnitById($pdo, $id);
+    if (!$data_before) {
+        json_error('未找到要删除的单位。', 404);
+    }
+    
     $stmt = $pdo->prepare("UPDATE kds_units SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?");
-    $stmt->execute([(int)$id]);
+    $stmt->execute([$id]);
+    
+    // [R2] 写入审计日志
+    log_audit_action($pdo, 'rms.unit.delete', 'kds_units', $id, $data_before, null);
+
     json_ok(null, '单位已删除。');
 }
 function handle_unit_get_next_code(PDO $pdo, array $config, array $input_data): void {
